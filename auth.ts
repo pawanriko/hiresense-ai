@@ -6,6 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 // Providers: Google OAuth (real users) + a demo credentials login (portfolio visitors).
 // Sessions are JWTs; every data query is scoped to session.user.id.
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
