@@ -12,8 +12,16 @@ export default function Home() {
         criterion — every point backed by a quote from your own resume, every
         miss turned into a fixable gap. Then practise the interview.
       </p>
-      <p className="mt-8 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
-        Build 1 — Foundation in progress · Docs in /docs
+      <div className="mt-8 flex gap-3">
+        <a href="/login" className="rounded-lg bg-slate-900 px-5 py-3 font-medium text-white">
+          Sign in
+        </a>
+        <a href="/dashboard" className="rounded-lg border border-slate-300 px-5 py-3 font-medium">
+          Go to dashboard
+        </a>
+      </div>
+      <p className="mt-6 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
+        Build 1 — Foundation · Docs in /docs
       </p>
     </main>
   );
