@@ -108,35 +108,35 @@ export default function InterviewPage() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-3xl font-bold">AI Mock Interview</h1>
-      <p className="mt-1 text-slate-600">
+      <p className="mt-1 text-slate-600 dark:text-slate-400">
         Five questions, one at a time, scored on a fixed rubric (relevance 30%, depth 25%, structure 20%,
         confidence 15%, conciseness 10%). Feedback is AI-generated when a Groq key is configured, otherwise an
         honest checklist score — always labelled.
       </p>
-      {message && <p className="mt-4 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">{message}</p>}
+      {message && <p className="mt-4 rounded-lg bg-slate-100 dark:bg-slate-800 p-3 text-sm text-slate-700">{message}</p>}
 
       {!session && (
         <>
-          <section className="mt-8 rounded-xl border border-slate-200 p-5">
+          <section className="mt-8 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
             <h2 className="text-lg font-semibold">Start a session</h2>
             <div className="mt-3 flex flex-wrap gap-3">
-              <select value={track} onChange={(e) => setTrack(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <select value={track} onChange={(e) => setTrack(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
                 {TRACKS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
               </select>
-              <select value={resumeId} onChange={(e) => setResumeId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <select value={resumeId} onChange={(e) => setResumeId(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
                 <option value="">Resume (optional)…</option>
                 {resumes.map((r) => <option key={r.id} value={r.id}>v{r.version} · {r.file_name}</option>)}
               </select>
-              <select value={jdId} onChange={(e) => setJdId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <select value={jdId} onChange={(e) => setJdId(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
                 <option value="">JD (optional)…</option>
                 {jds.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
               </select>
-              <button onClick={start} disabled={busy} className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40">
+              <button onClick={start} disabled={busy} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">
                 {busy ? "Starting…" : "Start interview"}
               </button>
             </div>
@@ -145,7 +145,7 @@ export default function InterviewPage() {
           {past.length > 0 && (
             <section className="mt-10">
               <h2 className="text-lg font-semibold">Past sessions</h2>
-              <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+              <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800">
                 {past.map((s) => (
                   <li key={s.id} className="flex items-center justify-between px-4 py-3 text-sm">
                     <span>{s.track} · {s.difficulty} · {s.status}{s.overall_score != null ? ` · ${s.overall_score}/100` : ""}</span>
@@ -164,26 +164,26 @@ export default function InterviewPage() {
 
       {session && session.status === "in_progress" && current && (
         <section className="mt-8">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Question {answeredCount + 1} of {session.transcript.length} · {session.track} · {session.difficulty}
           </p>
           <h2 className="mt-2 text-xl font-semibold">{current.question}</h2>
-          <p className="mt-1 text-sm text-slate-500">Topic: {current.topic}</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Topic: {current.topic}</p>
           <form onSubmit={submitAnswer} className="mt-4 space-y-3">
-            <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={6} required placeholder="Answer out loud in your head, then type it here…" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <button disabled={busy} className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40">
+            <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={6} required placeholder="Answer out loud in your head, then type it here…" className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
+            <button disabled={busy} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">
               {busy ? "Scoring…" : "Submit answer"}
             </button>
           </form>
           {lastFeedback && (
-            <div className="mt-6 rounded-xl border border-slate-200 p-5">
+            <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
               <h3 className="font-semibold">Feedback ({lastFeedback.source === "ai" ? "AI rubric" : "checklist"}) — overall {lastFeedback.overall}/100</h3>
-              <p className="mt-2 text-sm text-slate-600">{lastFeedback.feedback}</p>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{lastFeedback.feedback}</p>
               <div className="mt-3 space-y-1">
                 {DIMENSIONS.map((d) => (
                   <div key={d} className="flex items-center gap-2 text-sm">
-                    <span className="w-28 capitalize text-slate-500">{d}</span>
-                    <div className="h-2 flex-1 rounded bg-slate-100"><div className="h-2 rounded bg-slate-900" style={{ width: `${lastFeedback.scores[d] ?? 0}%` }} /></div>
+                    <span className="w-28 capitalize text-slate-500 dark:text-slate-400">{d}</span>
+                    <div className="h-2 flex-1 rounded bg-slate-100 dark:bg-slate-800"><div className="h-2 rounded bg-slate-900 dark:bg-slate-100" style={{ width: `${lastFeedback.scores[d] ?? 0}%` }} /></div>
                     <span>{lastFeedback.scores[d] ?? 0}</span>
                   </div>
                 ))}
@@ -196,12 +196,12 @@ export default function InterviewPage() {
       {session && session.status === "completed" && (
         <section className="mt-8">
           <h2 className="text-2xl font-bold">Interview report — {session.overall_score}/100</h2>
-          <p className="mt-1 text-sm text-slate-500">{session.track} · {session.difficulty} · feedback: {session.report?.feedback_source ?? "checklist"}</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{session.track} · {session.difficulty} · feedback: {session.report?.feedback_source ?? "checklist"}</p>
           <div className="mt-4 space-y-2">
             {(session.report?.topic_scores ?? []).map((t) => (
               <div key={t.topic} className="flex items-center gap-2 text-sm">
-                <span className="w-40 text-slate-600">{t.topic}</span>
-                <div className="h-2 flex-1 rounded bg-slate-100"><div className="h-2 rounded bg-slate-900" style={{ width: `${t.score}%` }} /></div>
+                <span className="w-40 text-slate-600 dark:text-slate-400">{t.topic}</span>
+                <div className="h-2 flex-1 rounded bg-slate-100 dark:bg-slate-800"><div className="h-2 rounded bg-slate-900 dark:bg-slate-100" style={{ width: `${t.score}%` }} /></div>
                 <span>{t.score}</span>
               </div>
             ))}
@@ -210,25 +210,25 @@ export default function InterviewPage() {
             <p className="mt-4 text-sm"><span className="font-medium">Weakest areas:</span> {session.report!.weakest_areas.join(", ")}</p>
           )}
           {session.report?.weakest_question && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+            <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 text-sm">
               <p className="font-medium">Weakest answer — practise this one again:</p>
               <p className="mt-1">Q: {session.report.weakest_question.question}</p>
-              <p className="mt-1 text-slate-600">Your answer: {session.report.weakest_question.answer}</p>
-              <p className="mt-1 text-slate-600">Feedback: {session.report.weakest_question.feedback}</p>
+              <p className="mt-1 text-slate-600 dark:text-slate-400">Your answer: {session.report.weakest_question.answer}</p>
+              <p className="mt-1 text-slate-600 dark:text-slate-400">Feedback: {session.report.weakest_question.feedback}</p>
             </div>
           )}
           <div className="mt-4 flex gap-2">
-            <button onClick={pushRevisionTasks} disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Push revision tasks to dashboard</button>
-            <button onClick={() => { setSession(null); setLastFeedback(null); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Start a new session</button>
+            <button onClick={pushRevisionTasks} disabled={busy} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-2 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">Push revision tasks to dashboard</button>
+            <button onClick={() => { setSession(null); setLastFeedback(null); }} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm">Start a new session</button>
           </div>
-          <details className="mt-6 text-sm text-slate-600">
+          <details className="mt-6 text-sm text-slate-600 dark:text-slate-400">
             <summary className="cursor-pointer font-medium text-slate-800">Full transcript</summary>
             <div className="mt-2 space-y-3">
               {session.transcript.map((t, i) => (
-                <div key={i} className="rounded-lg border border-slate-100 p-3">
+                <div key={i} className="rounded-lg border border-slate-100 dark:border-slate-800 p-3">
                   <p className="font-medium">Q{i + 1}: {t.question}</p>
                   <p className="mt-1">A: {t.answer}</p>
-                  <p className="mt-1 text-slate-500">Score {t.overall}/100 — {t.feedback}</p>
+                  <p className="mt-1 text-slate-500 dark:text-slate-400">Score {t.overall}/100 — {t.feedback}</p>
                 </div>
               ))}
             </div>

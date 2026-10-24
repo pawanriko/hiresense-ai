@@ -91,13 +91,13 @@ export default function ResumeLabPage() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-3xl font-bold">Resume Lab</h1>
-      <p className="mt-1 text-slate-600">
+      <p className="mt-1 text-slate-600 dark:text-slate-400">
         Upload a PDF or DOCX resume (max 10 MB). It is stored privately, parsed, split into
         sections, and scored by the rule-based ATS engine. Click a version to see its full ATS breakdown.
       </p>
 
       {!configured && (
-        <div className="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="mt-6 rounded-lg bg-amber-50 dark:bg-amber-950 p-4 text-sm text-amber-800 dark:text-amber-200">
           Supabase is not configured yet, so uploads are disabled. Add the keys to .env.local first.
         </div>
       )}
@@ -108,12 +108,12 @@ export default function ResumeLabPage() {
           name="file"
           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           required
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm"
         />
         <button
           type="submit"
           disabled={busy || !configured}
-          className="rounded-lg bg-slate-900 px-5 py-2.5 font-medium text-white disabled:opacity-40"
+          className="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 font-medium text-white dark:text-slate-900 disabled:opacity-40"
         >
           {busy ? "Uploading & parsing…" : "Upload resume"}
         </button>
@@ -123,17 +123,17 @@ export default function ResumeLabPage() {
       {ats && atsFor === latest?.id && (
         <section className="mt-8">
           <h2 className="text-lg font-semibold">ATS health score: {ats.score}/100</h2>
-          <p className="mt-1 text-sm text-slate-500">Rule-based, JD-independent. Every deduction below names the failed check.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Rule-based, JD-independent. Every deduction below names the failed check.</p>
           <div className="mt-3 space-y-3">
             {ats.categories.map((cat) => (
-              <div key={cat.name} className="rounded-xl border border-slate-200 p-4">
+              <div key={cat.name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                 <div className="flex justify-between text-sm">
-                  <span className="font-medium">{cat.name} <span className="text-slate-500">(weight {cat.weight}%)</span></span>
+                  <span className="font-medium">{cat.name} <span className="text-slate-500 dark:text-slate-400">(weight {cat.weight}%)</span></span>
                   <span>{cat.score}/100</span>
                 </div>
                 <ul className="mt-2 space-y-1">
                   {cat.checks.map((c) => (
-                    <li key={c.name} className="text-sm text-slate-600">
+                    <li key={c.name} className="text-sm text-slate-600 dark:text-slate-400">
                       {c.passed ? "✓" : "✗"} {c.name} — {c.detail}
                     </li>
                   ))}
@@ -149,9 +149,9 @@ export default function ResumeLabPage() {
           <h2 className="text-lg font-semibold">Sections detected in v{latest.version}</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {sectionNames.map((name) => (
-              <div key={name} className="rounded-xl border border-slate-200 p-4">
+              <div key={name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-wide">{name}</h3>
-                <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm text-slate-600">
+                <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">
                   {latest.sections?.[name]}
                 </p>
               </div>
@@ -163,21 +163,21 @@ export default function ResumeLabPage() {
       <section className="mt-10">
         <h2 className="text-lg font-semibold">Your versions</h2>
         {items.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-600">No uploads yet.</p>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">No uploads yet.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+          <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800">
             {items.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <span>
                   <span className="font-medium">v{r.version}</span> · {r.file_name}
                   {r.ats_score != null ? ` · ATS ${r.ats_score}` : ""}
                 </span>
-                <span className="flex items-center gap-2 text-slate-500">
+                <span className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
                   <span>{r.parse_status} · {new Date(r.created_at).toLocaleString()}</span>
                   {r.parse_status === "parsed" && (
-                    <button onClick={() => void showAts(r)} className="rounded border border-slate-300 px-2 py-1 text-xs">ATS detail</button>
+                    <button onClick={() => void showAts(r)} className="rounded border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs">ATS detail</button>
                   )}
-                  <button onClick={() => void deleteResume(r)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600">Delete</button>
+                  <button onClick={() => void deleteResume(r)} className="rounded border border-red-200 dark:border-red-800 px-2 py-1 text-xs text-red-600 dark:text-red-400">Delete</button>
                 </span>
               </li>
             ))}
