@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Spinner from "@/app/components/Spinner";
 
 interface ResumeItem { id: string; version: number; file_name: string; parse_status: string }
 interface JdItem { id: string; title: string; company: string | null; criteria: Criterion[] }
@@ -44,6 +45,7 @@ export default function JdMatchPage() {
   const [coverSource, setCoverSource] = useState<string | null>(null);
   const [tailored, setTailored] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadLists = useCallback(async () => {
@@ -58,7 +60,7 @@ export default function JdMatchPage() {
     }
   }, []);
 
-  useEffect(() => { void loadLists(); }, [loadLists]);
+  useEffect(() => { void loadLists().finally(() => setInitialLoading(false)); }, [loadLists]);
 
   // Deep-link: /jd-match?analysis=<id> loads a past analysis.
   useEffect(() => {
@@ -210,6 +212,14 @@ export default function JdMatchPage() {
   }
 
   const totalWeight = criteria.reduce((s, c) => s + c.weight, 0);
+
+  if (initialLoading) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <Spinner label="Loading JD Match…" />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">

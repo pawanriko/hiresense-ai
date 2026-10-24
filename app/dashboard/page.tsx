@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import Spinner from "@/app/components/Spinner";
 
 interface Analysis { id: string; match_score: number; created_at: string; job_descriptions: { title: string; company: string | null } | null }
 interface Task { id: string; title: string; source_gap: string | null; status: string }
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const load = useCallback(async () => {
     const [d, a] = await Promise.all([fetch("/api/dashboard"), fetch("/api/applications")]);
@@ -35,7 +37,7 @@ export default function DashboardPage() {
     if (a.ok) setApplications((await a.json()).applications ?? []);
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load().finally(() => setInitialLoading(false)); }, [load]);
 
   async function setTaskStatus(id: string, status: string) {
     await fetch(`/api/prep-tasks/${id}`, {
@@ -70,6 +72,14 @@ export default function DashboardPage() {
   }
 
   const maxTrend = Math.max(100, ...trend.map((t) => t.score));
+
+  if (initialLoading) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <Spinner label="Loading dashboard…" />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
