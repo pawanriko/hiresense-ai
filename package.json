@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -23,6 +24,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
   }
 }
