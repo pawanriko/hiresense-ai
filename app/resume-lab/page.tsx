@@ -14,12 +14,38 @@ interface ResumeItem {
   created_at: string;
 }
 
+interface AtsCheck { name: string; passed: boolean; detail: string }
+interface AtsCategory { name: string; weight: number; score: number; checks: AtsCheck[] }
+
 export default function ResumeLabPage() {
   const [items, setItems] = useState<ResumeItem[]>([]);
   const [latest, setLatest] = useState<ResumeItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [configured, setConfigured] = useState(true);
+  const [ats, setAts] = useState<{ score: number; categories: AtsCategory[] } | null>(null);
+  const [atsFor, setAtsFor] = useState<string | null>(null);
+
+  async function showAts(item: ResumeItem) {
+    setAtsFor(item.id);
+    const res = await fetch(`/api/resumes/${item.id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setAts(data.ats);
+      setLatest(data.resume as ResumeItem);
+      await load();
+    }
+  }
+
+  async function deleteResume(item: ResumeItem) {
+    if (!window.confirm(`Delete v${item.version} (${item.file_name}) and its analyses? This cannot be undone.`)) return;
+    const res = await fetch(`/api/resumes/${item.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setMessage("Resume deleted, along with its analyses.");
+      if (latest?.id === item.id) { setLatest(null); setAts(null); }
+      await load();
+    } else setMessage("Could not delete the resume.");
+  }
 
   const load = useCallback(async () => {
     const res = await fetch("/api/resumes");
@@ -66,8 +92,8 @@ export default function ResumeLabPage() {
     <main className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-3xl font-bold">Resume Lab</h1>
       <p className="mt-1 text-slate-600">
-        Upload a PDF or DOCX resume (max 10 MB). It is stored privately, parsed, and split into
-        sections — the base for ATS checks (Build 2) and JD matching.
+        Upload a PDF or DOCX resume (max 10 MB). It is stored privately, parsed, split into
+        sections, and scored by the rule-based ATS engine. Click a version to see its full ATS breakdown.
       </p>
 
       {!configured && (
@@ -94,6 +120,30 @@ export default function ResumeLabPage() {
       </form>
       {message && <p className="mt-4 text-sm text-slate-700">{message}</p>}
 
+      {ats && atsFor === latest?.id && (
+        <section className="mt-8">
+          <h2 className="text-lg font-semibold">ATS health score: {ats.score}/100</h2>
+          <p className="mt-1 text-sm text-slate-500">Rule-based, JD-independent. Every deduction below names the failed check.</p>
+          <div className="mt-3 space-y-3">
+            {ats.categories.map((cat) => (
+              <div key={cat.name} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">{cat.name} <span className="text-slate-500">(weight {cat.weight}%)</span></span>
+                  <span>{cat.score}/100</span>
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {cat.checks.map((c) => (
+                    <li key={c.name} className="text-sm text-slate-600">
+                      {c.passed ? "✓" : "✗"} {c.name} — {c.detail}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {latest && sectionNames.length > 0 && (
         <section className="mt-8">
           <h2 className="text-lg font-semibold">Sections detected in v{latest.version}</h2>
@@ -117,12 +167,17 @@ export default function ResumeLabPage() {
         ) : (
           <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
             {items.map((r) => (
-              <li key={r.id} className="flex items-center justify-between px-4 py-3 text-sm">
+              <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <span>
                   <span className="font-medium">v{r.version}</span> · {r.file_name}
+                  {r.ats_score != null ? ` · ATS ${r.ats_score}` : ""}
                 </span>
-                <span className="text-slate-500">
-                  {r.parse_status} · {new Date(r.created_at).toLocaleString()}
+                <span className="flex items-center gap-2 text-slate-500">
+                  <span>{r.parse_status} · {new Date(r.created_at).toLocaleString()}</span>
+                  {r.parse_status === "parsed" && (
+                    <button onClick={() => void showAts(r)} className="rounded border border-slate-300 px-2 py-1 text-xs">ATS detail</button>
+                  )}
+                  <button onClick={() => void deleteResume(r)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600">Delete</button>
                 </span>
               </li>
             ))}
