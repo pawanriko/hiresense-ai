@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Spinner from "@/app/components/Spinner";
 
 interface ResumeItem {
   id: string;
@@ -22,6 +23,7 @@ export default function ResumeLabPage() {
   const [latest, setLatest] = useState<ResumeItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [ats, setAts] = useState<{ score: number; categories: AtsCategory[] } | null>(null);
   const [atsFor, setAtsFor] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export default function ResumeLabPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    void load().finally(() => setInitialLoading(false));
   }, [load]);
 
   async function onUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -88,8 +90,16 @@ export default function ResumeLabPage() {
 
   const sectionNames = latest?.sections ? Object.keys(latest.sections) : [];
 
+  if (initialLoading) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <Spinner label="Loading resumes…" />
+      </main>
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-bold">Resume Lab</h1>
       <p className="mt-1 text-slate-600 dark:text-slate-400">
         Upload a PDF or DOCX resume (max 10 MB). It is stored privately, parsed, split into

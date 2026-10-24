@@ -105,6 +105,17 @@ describe("interview question bank and checklist scoring", () => {
     expect(pickQuestions("HR", "easy")[0].difficulty).toBe("easy");
   });
 
+  it("a project answer scores relevance without saying the topic label word", () => {
+    // Regression: relevance was measured only against the topic label, so this
+    // strong answer scored 0 relevance because it never says "ownership".
+    const s = scoreAnswerChecklist(
+      "Describe a project you are most proud of. What was your exact contribution?",
+      "I built a React dashboard project for my college fest. My exact contribution was the frontend and caching layer, which cut load time by 40% for 500 users.",
+      ["ownership"]
+    );
+    expect(s.relevance).toBeGreaterThan(50);
+  });
+
   it("a one-line answer scores low on depth", () => {
     const s = scoreAnswerChecklist("Tell me about yourself.", "I like coding.", []);
     expect(s.depth).toBeLessThan(50);
