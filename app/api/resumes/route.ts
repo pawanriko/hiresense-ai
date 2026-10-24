@@ -7,6 +7,7 @@ import {
   parseResumeBuffer,
   MAX_FILE_BYTES,
 } from "@/lib/parsing/parse-resume";
+import { computeAts } from "@/lib/scoring/ats";
 
 const BUCKET = "resumes";
 
@@ -63,6 +64,11 @@ export async function POST(request: Request) {
     parseError = err instanceof Error ? err.message : "Could not parse this file.";
   }
 
+  // ATS health score is computed at upload time so Resume Lab can show it
+  // immediately (the detail endpoint recomputes it the same way).
+  const atsScore =
+    parseStatus === "parsed" ? computeAts(sections, parsedText).score : null;
+
   const { data, error } = await supabase
     .from("resumes")
     .insert({
@@ -75,8 +81,9 @@ export async function POST(request: Request) {
       sections,
       parse_status: parseStatus,
       parse_error: parseError,
+      ats_score: atsScore,
     })
-    .select("id, version, file_name, file_type, parse_status, parse_error, sections, created_at")
+    .select("id, version, file_name, file_type, parse_status, parse_error, sections, ats_score, created_at")
     .single();
   if (error) return errorJson("db_failed", "Could not save the resume record.", 502);
 
