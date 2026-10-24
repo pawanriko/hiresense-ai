@@ -283,6 +283,8 @@ export default function JdMatchPage() {
           </button>
         </div>
         {resumes.length === 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">No parsed resumes yet — upload one in the Resume Lab first.</p>}
+        {resumes.length > 0 && !resumeId && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Pick a resume to enable Run match.</p>}
+        {!jdId && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Save a JD first to enable Run match.</p>}
       </section>
 
       {analysis && (
