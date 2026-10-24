@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+/* Class-based dark mode: the toggle adds/removes `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Form controls have no dark: classes in the pages, so cover them here. */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f172a;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}

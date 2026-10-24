@@ -11,10 +11,10 @@ interface Analysis { id: string; resume_id: string; jd_id: string; match_score: 
 interface Rewrite { id: string; original_bullet: string; rewritten_bullet: string; accepted: boolean }
 
 const STATUS_STYLE: Record<string, string> = {
-  strong: "bg-emerald-100 text-emerald-800",
-  present: "bg-sky-100 text-sky-800",
-  weak: "bg-amber-100 text-amber-800",
-  missing: "bg-red-100 text-red-800",
+  strong: "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200",
+  present: "bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-200",
+  weak: "bg-amber-100 text-amber-800 dark:text-amber-200",
+  missing: "bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-200",
 };
 
 function download(filename: string, text: string) {
@@ -214,28 +214,28 @@ export default function JdMatchPage() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-3xl font-bold">JD Match</h1>
-      <p className="mt-1 text-slate-600">
+      <p className="mt-1 text-slate-600 dark:text-slate-400">
         Paste a job description, approve the criteria and weights, then run the deterministic scoring engine.
         The AI only drafts criteria — it never computes your score.
       </p>
-      {message && <p className="mt-4 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">{message}</p>}
+      {message && <p className="mt-4 rounded-lg bg-slate-100 dark:bg-slate-800 p-3 text-sm text-slate-700">{message}</p>}
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold">1 · Job description</h2>
         <form onSubmit={createJd} className="mt-3 space-y-3">
           <div className="flex flex-wrap gap-3">
-            <input value={jdTitle} onChange={(e) => setJdTitle(e.target.value)} placeholder="Role title, e.g. Frontend Intern" required className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <input value={jdCompany} onChange={(e) => setJdCompany(e.target.value)} placeholder="Company (optional)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <input value={jdTitle} onChange={(e) => setJdTitle(e.target.value)} placeholder="Role title, e.g. Frontend Intern" required className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
+            <input value={jdCompany} onChange={(e) => setJdCompany(e.target.value)} placeholder="Company (optional)" className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
           </div>
-          <textarea value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="Paste the full job description here…" required rows={7} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <button disabled={busy === "jd"} className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40">
+          <textarea value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="Paste the full job description here…" required rows={7} className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
+          <button disabled={busy === "jd"} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">
             {busy === "jd" ? "Saving…" : "Save JD & draft criteria"}
           </button>
         </form>
         {jds.length > 0 && (
           <div className="mt-4">
-            <label className="text-sm text-slate-600">Or pick a saved JD: </label>
-            <select value={jdId} onChange={(e) => selectJd(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <label className="text-sm text-slate-600 dark:text-slate-400">Or pick a saved JD: </label>
+            <select value={jdId} onChange={(e) => selectJd(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
               <option value="">—</option>
               {jds.map((j) => <option key={j.id} value={j.id}>{j.title}{j.company ? ` · ${j.company}` : ""}</option>)}
             </select>
@@ -246,27 +246,27 @@ export default function JdMatchPage() {
       {jdId && (
         <section className="mt-10">
           <h2 className="text-lg font-semibold">2 · Criteria — review and edit before scoring</h2>
-          {criteriaSource && <p className="mt-1 text-sm text-slate-500">Draft source: {criteriaSource}. Total weight: {totalWeight} (weights are normalised by the engine, but keep them near 100).</p>}
+          {criteriaSource && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Draft source: {criteriaSource}. Total weight: {totalWeight} (weights are normalised by the engine, but keep them near 100).</p>}
           {criteria.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-600">No criteria detected. Click “Extract criteria” or add rows manually.</p>
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">No criteria detected. Click “Extract criteria” or add rows manually.</p>
           ) : (
             <div className="mt-3 space-y-2">
               {criteria.map((c, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-2">
-                  <input value={c.name} onChange={(e) => setCriteria((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <input value={c.weight} type="number" min={0} max={100} onChange={(e) => setCriteria((prev) => prev.map((x, j) => (j === i ? { ...x, weight: Number(e.target.value) } : x)))} className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <label className="flex items-center gap-1 text-sm text-slate-600">
+                  <input value={c.name} onChange={(e) => setCriteria((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
+                  <input value={c.weight} type="number" min={0} max={100} onChange={(e) => setCriteria((prev) => prev.map((x, j) => (j === i ? { ...x, weight: Number(e.target.value) } : x)))} className="w-20 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm" />
+                  <label className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-400">
                     <input type="checkbox" checked={c.required} onChange={(e) => setCriteria((prev) => prev.map((x, j) => (j === i ? { ...x, required: e.target.checked } : x)))} /> Required
                   </label>
-                  <button onClick={() => setCriteria((prev) => prev.filter((_, j) => j !== i))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">Remove</button>
+                  <button onClick={() => setCriteria((prev) => prev.filter((_, j) => j !== i))} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">Remove</button>
                 </div>
               ))}
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={() => setCriteria((prev) => [...prev, { name: "", category: "skill", weight: 10, required: false }])} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Add criterion</button>
-            <button onClick={extractCriteria} disabled={busy === "extract"} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Extract criteria</button>
-            <button onClick={saveCriteria} disabled={busy === "criteria"} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Save criteria</button>
+            <button onClick={() => setCriteria((prev) => [...prev, { name: "", category: "skill", weight: 10, required: false }])} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm">Add criterion</button>
+            <button onClick={extractCriteria} disabled={busy === "extract"} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm disabled:opacity-40">Extract criteria</button>
+            <button onClick={saveCriteria} disabled={busy === "criteria"} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-2 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">Save criteria</button>
           </div>
         </section>
       )}
@@ -274,29 +274,29 @@ export default function JdMatchPage() {
       <section className="mt-10">
         <h2 className="text-lg font-semibold">3 · Run the match</h2>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <select value={resumeId} onChange={(e) => setResumeId(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select value={resumeId} onChange={(e) => setResumeId(e.target.value)} className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm">
             <option value="">Pick a resume…</option>
             {resumes.map((r) => <option key={r.id} value={r.id}>v{r.version} · {r.file_name}</option>)}
           </select>
-          <button onClick={runMatch} disabled={busy === "match" || !resumeId || !jdId} className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40">
+          <button onClick={runMatch} disabled={busy === "match" || !resumeId || !jdId} className="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">
             {busy === "match" ? "Scoring…" : "Run match"}
           </button>
         </div>
-        {resumes.length === 0 && <p className="mt-2 text-sm text-slate-600">No parsed resumes yet — upload one in the Resume Lab first.</p>}
+        {resumes.length === 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">No parsed resumes yet — upload one in the Resume Lab first.</p>}
       </section>
 
       {analysis && (
         <section className="mt-10">
           <h2 className="text-2xl font-bold">Match score: {analysis.match_score}/100</h2>
-          <p className="mt-1 text-sm text-slate-500">Score = Σ(weight × criterion score) / Σweights. Every point below is backed by a quote from your resume.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Score = Σ(weight × criterion score) / Σweights. Every point below is backed by a quote from your resume.</p>
           <div className="mt-4 space-y-3">
             {analysis.criteria_results.map((r) => (
-              <div key={r.name} className="rounded-xl border border-slate-200 p-4">
+              <div key={r.name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">{r.name} <span className="text-sm text-slate-500">· weight {r.weight}</span></span>
-                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[r.status] ?? "bg-slate-100"}`}>{r.status} · {r.score}</span>
+                  <span className="font-medium">{r.name} <span className="text-sm text-slate-500 dark:text-slate-400">· weight {r.weight}</span></span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[r.status] ?? "bg-slate-100 dark:bg-slate-800"}`}>{r.status} · {r.score}</span>
                 </div>
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
                   {r.evidence ? <>“{r.evidence}” <span className="text-slate-400">({r.section})</span></> : "No evidence found in this resume."}
                 </p>
               </div>
@@ -308,32 +308,32 @@ export default function JdMatchPage() {
               <h3 className="text-lg font-semibold">Gaps — each one is fixable</h3>
               <ul className="mt-2 space-y-2">
                 {analysis.gaps.map((g) => (
-                  <li key={g.criterion} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+                  <li key={g.criterion} className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 text-sm">
                     <span className="font-medium">{g.criterion} ({g.current_status})</span> — {g.suggested_action}
                   </li>
                 ))}
               </ul>
-              <button onClick={pushGaps} disabled={busy === "tasks"} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">
+              <button onClick={pushGaps} disabled={busy === "tasks"} className="mt-3 rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-2 text-sm font-medium text-white dark:text-slate-900 disabled:opacity-40">
                 {busy === "tasks" ? "Adding…" : "Push gaps to Prep Dashboard"}
               </button>
             </div>
           )}
 
           <div className="mt-8 flex flex-wrap gap-2">
-            <button onClick={genRewrites} disabled={busy === "rewrites"} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Generate bullet rewrites</button>
-            <button onClick={genCoverLetter} disabled={busy === "cover"} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Generate cover letter</button>
-            <button onClick={genTailored} disabled={busy === "tailored"} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Generate tailored resume</button>
+            <button onClick={genRewrites} disabled={busy === "rewrites"} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm disabled:opacity-40">Generate bullet rewrites</button>
+            <button onClick={genCoverLetter} disabled={busy === "cover"} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm disabled:opacity-40">Generate cover letter</button>
+            <button onClick={genTailored} disabled={busy === "tailored"} className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm disabled:opacity-40">Generate tailored resume</button>
           </div>
 
           {rewrites.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-lg font-semibold">Bullet rewrites {rewriteSource ? <span className="text-sm font-normal text-slate-500">({rewriteSource === "ai" ? "AI-generated" : "template draft — edit before using"})</span> : null}</h3>
+              <h3 className="text-lg font-semibold">Bullet rewrites {rewriteSource ? <span className="text-sm font-normal text-slate-500 dark:text-slate-400">({rewriteSource === "ai" ? "AI-generated" : "template draft — edit before using"})</span> : null}</h3>
               <div className="mt-2 space-y-3">
                 {rewrites.map((rw) => (
-                  <div key={rw.id} className="rounded-xl border border-slate-200 p-4 text-sm">
-                    <p className="text-slate-500">Original: {rw.original_bullet}</p>
+                  <div key={rw.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 text-sm">
+                    <p className="text-slate-500 dark:text-slate-400">Original: {rw.original_bullet}</p>
                     <p className="mt-1 font-medium">Rewrite: {rw.rewritten_bullet}</p>
-                    <button onClick={() => void toggleRewrite(rw)} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs">
+                    <button onClick={() => void toggleRewrite(rw)} className="mt-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs">
                       {rw.accepted ? "✓ Accepted — click to undo" : "Accept this rewrite"}
                     </button>
                   </div>
@@ -344,17 +344,17 @@ export default function JdMatchPage() {
 
           {coverLetter && (
             <div className="mt-6">
-              <h3 className="text-lg font-semibold">Cover letter {coverSource ? <span className="text-sm font-normal text-slate-500">({coverSource === "ai" ? "AI-generated" : "template"})</span> : null}</h3>
-              <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm">{coverLetter}</pre>
-              <button onClick={() => download("cover-letter.txt", coverLetter)} className="mt-2 rounded-lg border border-slate-300 px-4 py-2 text-sm">Download .txt</button>
+              <h3 className="text-lg font-semibold">Cover letter {coverSource ? <span className="text-sm font-normal text-slate-500 dark:text-slate-400">({coverSource === "ai" ? "AI-generated" : "template"})</span> : null}</h3>
+              <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-200 dark:border-slate-800 p-4 text-sm">{coverLetter}</pre>
+              <button onClick={() => download("cover-letter.txt", coverLetter)} className="mt-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm">Download .txt</button>
             </div>
           )}
 
           {tailored && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold">Tailored resume draft</h3>
-              <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm">{tailored}</pre>
-              <button onClick={() => download("tailored-resume.md", tailored)} className="mt-2 rounded-lg border border-slate-300 px-4 py-2 text-sm">Download .md</button>
+              <pre className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-200 dark:border-slate-800 p-4 text-sm">{tailored}</pre>
+              <button onClick={() => download("tailored-resume.md", tailored)} className="mt-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm">Download .md</button>
             </div>
           )}
         </section>

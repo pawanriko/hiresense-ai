@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://hiresense-ai-nine.vercel.app/sitemap.xml

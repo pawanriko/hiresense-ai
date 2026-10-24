@@ -7,7 +7,7 @@ export default function LoginPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <h1 className="text-3xl font-bold">Welcome to HireSense AI</h1>
-      <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-slate-600 dark:text-slate-400">
         Sign in to score your resume against any job description.
       </p>
 
@@ -21,12 +21,12 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={!googleReady}
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-3 font-medium text-white dark:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Continue with Google
           </button>
           {!googleReady && (
-            <p className="mt-2 text-center text-xs text-slate-500">
+            <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
               Google login activates once OAuth keys are added to .env.local
             </p>
           )}
@@ -49,14 +49,14 @@ export default function LoginPage() {
             type="email"
             required
             placeholder="Demo email"
-            className="w-full rounded-lg border border-slate-300 px-4 py-3"
+            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-3"
           />
           <input
             name="password"
             type="password"
             required
             placeholder="Demo password"
-            className="w-full rounded-lg border border-slate-300 px-4 py-3"
+            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-3"
           />
           <button
             type="submit"
@@ -66,7 +66,7 @@ export default function LoginPage() {
             Try the demo account
           </button>
           {!demoReady && (
-            <p className="text-center text-xs text-slate-500">
+            <p className="text-center text-xs text-slate-500 dark:text-slate-400">
               Demo login activates once DEMO_USER_EMAIL / DEMO_USER_PASSWORD are set
             </p>
           )}
