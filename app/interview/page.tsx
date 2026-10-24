@@ -106,7 +106,7 @@ export default function InterviewPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-bold">AI Mock Interview</h1>
       <p className="mt-1 text-slate-600 dark:text-slate-400">
         Five questions, one at a time, scored on a fixed rubric (relevance 30%, depth 25%, structure 20%,

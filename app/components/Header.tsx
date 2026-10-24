@@ -10,7 +10,7 @@ export default async function Header() {
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-3">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <Link href="/" className="text-lg font-bold tracking-tight">
           HireSense <span className="text-slate-500 dark:text-slate-400">AI</span>
         </Link>

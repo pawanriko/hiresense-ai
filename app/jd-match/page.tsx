@@ -212,7 +212,7 @@ export default function JdMatchPage() {
   const totalWeight = criteria.reduce((s, c) => s + c.weight, 0);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-bold">JD Match</h1>
       <p className="mt-1 text-slate-600 dark:text-slate-400">
         Paste a job description, approve the criteria and weights, then run the deterministic scoring engine.

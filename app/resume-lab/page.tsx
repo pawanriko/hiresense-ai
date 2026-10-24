@@ -89,7 +89,7 @@ export default function ResumeLabPage() {
   const sectionNames = latest?.sections ? Object.keys(latest.sections) : [];
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-bold">Resume Lab</h1>
       <p className="mt-1 text-slate-600 dark:text-slate-400">
         Upload a PDF or DOCX resume (max 10 MB). It is stored privately, parsed, split into

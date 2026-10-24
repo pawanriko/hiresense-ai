@@ -1,6 +1,6 @@
 export default function Home() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
+    <main className="mx-auto max-w-5xl px-6 py-16">
       <div className="text-center">
         <p className="mb-3 text-sm font-medium tracking-wide text-slate-500 dark:text-slate-400">
           HIRESENSE AI · CANDIDATE EDITION

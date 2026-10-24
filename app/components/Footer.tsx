@@ -4,7 +4,7 @@ import Link from "next/link";
 export default function Footer() {
   return (
     <footer className="mt-16 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-      <div className="mx-auto grid max-w-5xl gap-8 px-6 py-10 sm:grid-cols-3">
+      <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 sm:grid-cols-3">
         <div>
           <p className="font-bold">HireSense AI</p>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
@@ -33,7 +33,7 @@ export default function Footer() {
         </nav>
       </div>
       <div className="border-t border-slate-200 dark:border-slate-800">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
           <span>© 2026 HireSense AI · Built by Pawan Kumar</span>
           <span>
             Scoring is deterministic and explainable; AI features are labelled when they run.

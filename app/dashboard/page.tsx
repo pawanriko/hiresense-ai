@@ -72,7 +72,7 @@ export default function DashboardPage() {
   const maxTrend = Math.max(100, ...trend.map((t) => t.score));
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <header>
         <h1 className="text-3xl font-bold">Prep Dashboard</h1>
         <p className="mt-1 text-slate-600 dark:text-slate-400">Your gaps, your applications, your progress — in one place.</p>
