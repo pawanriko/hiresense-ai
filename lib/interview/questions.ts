@@ -82,6 +82,15 @@ export interface ChecklistScore {
 
 const STAR_WORDS = ["situation", "task", "action", "result", "first", "then", "finally", "because", "so we"];
 
+// Generic question words that carry no topic signal — excluded when deriving
+// keywords from the question itself.
+const QUESTION_STOPWORDS = new Set([
+  "tell", "describe", "explain", "about", "your", "you", "what", "when", "where",
+  "which", "would", "should", "could", "walk", "through", "under", "minutes",
+  "difference", "between", "example", "given", "before", "writing", "steps",
+  "approach", "discuss", "share", "think",
+]);
+
 export function scoreAnswerChecklist(
   question: string,
   answer: string,
@@ -90,7 +99,23 @@ export function scoreAnswerChecklist(
   const text = answer.toLowerCase();
   const words = answer.split(/\s+/).filter(Boolean).length;
   const keywordHits = topicKeywords.filter((k) => text.includes(k.toLowerCase())).length;
-  const relevance = topicKeywords.length === 0 ? 60 : Math.round((keywordHits / topicKeywords.length) * 100);
+  // Relevance used to be measured ONLY against the topic label (e.g. the word
+  // "ownership" for a project question), so a strong answer that never said the
+  // label word scored 0 relevance. Now the question's own content words count
+  // too, and the better of the two rates wins.
+  const topicRate =
+    topicKeywords.length === 0 ? null : keywordHits / topicKeywords.length;
+  const questionKeywords = question
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length >= 4 && !QUESTION_STOPWORDS.has(w));
+  const questionHits = questionKeywords.filter((k) => text.includes(k)).length;
+  const questionRate =
+    questionKeywords.length === 0 ? null : questionHits / questionKeywords.length;
+  const relevance =
+    topicRate === null && questionRate === null
+      ? 60
+      : Math.round(Math.max(topicRate ?? 0, questionRate ?? 0) * 100);
   const depth = words < 20 ? 30 : words < 60 ? 60 : words < 150 ? 85 : 95;
   const starHits = STAR_WORDS.filter((w) => text.includes(w)).length;
   const structure = Math.min(100, 30 + starHits * 15);
@@ -102,7 +127,7 @@ export function scoreAnswerChecklist(
   const feedback =
     words < 20
       ? "Too short to judge depth — expand with a concrete example: what you did, and what changed."
-      : keywordHits === 0 && topicKeywords.length > 0
+      : relevance < 30
         ? "The answer drifts from the question's topic — anchor the first sentence directly to what was asked, then give one example."
         : "Solid structure. To push higher, add one measurable outcome to your example (a number, a before/after, or a user impact).";
   return { relevance, depth, structure, confidence, conciseness, overall, feedback };
