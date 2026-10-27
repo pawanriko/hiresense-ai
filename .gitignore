@@ -1,9 +1,0 @@
-node_modules/
-.next/
-out/
-dist/
-.env
-.env.*
-!.env.example
-*.log
-.DS_Store
