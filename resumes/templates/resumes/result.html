@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% comment %}
+Result page. ``resume.breakdown`` is the full compute_ats() dict stored as
+JSON on the model, so this template just walks it: categories, then the
+checks inside each one, with a pass/fail mark and the explanation string.
+No recomputation happens here — display only.
+{% endcomment %}
+{% block title %}Resume score — HireSense AI{% endblock %}
+{% block content %}
+  <h1>{{ resume.original_name }}</h1>
+  <p>ATS score: <span class="score">{{ resume.ats_score }}/100</span></p>
+  <p><small>Uploaded {{ resume.created_at|date:"j M Y, H:i" }}</small></p>
+
+  {% for category in resume.breakdown.categories %}
+    <div class="card">
+      <h2>{{ category.name }} — {{ category.score }}/100 (weight {{ category.weight }})</h2>
+      <ul>
+        {% for check in category.checks %}
+          <li>
+            {% if check.passed %}<span class="pass">✓</span>{% else %}<span class="fail">✗</span>{% endif %}
+            <strong>{{ check.name }}</strong> — {{ check.detail }}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+
+  <p><a href="{% url 'resumes:upload' %}">Score another resume</a></p>
+{% endblock %}

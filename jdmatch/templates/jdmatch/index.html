@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% comment %}
+JD Match home page — the original page's sections 1 and 3, minus the
+scoring itself (that lives on the JD detail page). Lists are newest first
+because both models order by -created_at.
+{% endcomment %}
+{% block title %}JD Match — HireSense AI{% endblock %}
+{% block content %}
+  <h1>JD Match</h1>
+  <p>Paste a job description, approve the criteria and weights, then run
+  the deterministic scoring engine. The criteria draft never scores as-is —
+  you edit it first.</p>
+
+  <h2>1 · Job description</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save JD &amp; draft criteria</button>
+  </form>
+
+  {% if jds %}
+    <h2>Saved JDs</h2>
+    <ul>
+      {% for jd in jds %}
+        <li><a href="{% url 'jdmatch:detail' pk=jd.pk %}">{{ jd.title }}{% if jd.company %} · {{ jd.company }}{% endif %}</a>
+        <small>({{ jd.criteria|length }} criteria)</small></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if analyses %}
+    <h2>Past matches</h2>
+    <ul>
+      {% for analysis in analyses %}
+        <li><a href="{% url 'jdmatch:result' pk=analysis.pk %}">{{ analysis.jd.title }} — {{ analysis.match_score|floatformat:"-1" }}/100</a>
+        <small>({{ analysis.resume.original_name }}, {{ analysis.created_at|date:"j M Y, H:i" }})</small></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

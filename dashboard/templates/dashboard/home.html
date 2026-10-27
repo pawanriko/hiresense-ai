@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% comment %}
+Dashboard home. ``user``, ``resumes`` and ``latest`` come from the view's
+context dict (see dashboard/views.py). In templates, {{ x.y }} does a
+dictionary lookup, then an attribute lookup, then a list-index lookup —
+quietly rendering nothing if all fail, instead of crashing.
+{% endcomment %}
+{% block title %}Dashboard — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Prep dashboard</h1>
+  <p>Welcome, {{ user.first_name|default:user.username }}.</p>
+
+  {% if latest %}
+    <div class="card">
+      Latest resume score: <span class="score">{{ latest.ats_score }}/100</span><br>
+      <a href="{% url 'resumes:result' latest.pk %}">{{ latest.original_name }}</a>
+      — uploaded {{ latest.created_at|date:"j M Y, H:i" }}
+    </div>
+  {% else %}
+    <p>No resumes yet. Upload one to get your first ATS score.</p>
+  {% endif %}
+
+  <p><a href="{% url 'resumes:upload' %}">Upload a resume</a></p>
+
+  <div class="card">
+    <p>Open gap tasks: <strong>{{ open_tasks }}</strong> · {{ done_tasks }} done
+    — <a href="{% url 'applications:tasks' %}">View gap tasks</a></p>
+    <p>Applications:
+      {% for status, count in app_counts.items %}
+        {{ status }}: {{ count }}{% if not forloop.last %} · {% endif %}
+      {% endfor %}
+      — <a href="{% url 'applications:index' %}">View applications</a></p>
+  </div>
+
+  {% if resumes %}
+    <h2>Your resumes</h2>
+    <ul>
+      {% for resume in resumes %}
+        <li>
+          <a href="{% url 'resumes:result' resume.pk %}">{{ resume.original_name }}</a>
+          — ATS {{ resume.ats_score }}/100
+          ({{ resume.created_at|date:"j M Y, H:i" }})
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

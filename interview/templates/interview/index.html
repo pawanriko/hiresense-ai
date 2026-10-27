@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% comment %}
+Interview home page — start a session, then past sessions newest first.
+The start form only offers tracks/difficulties the question bank actually
+has, because its choices come from the bank (see interview/forms.py).
+{% endcomment %}
+{% block title %}Mock Interview — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Mock Interview</h1>
+  <p>Five questions, one at a time, scored on a fixed rubric (relevance 30%,
+  depth 25%, structure 20%, confidence 15%, conciseness 10%). With a Groq
+  key configured, questions are generated from your JD + company and
+  answers get AI feedback; without one, the question bank and the
+  deterministic checklist run instead. Either way, each feedback is
+  labelled with its source.</p>
+
+  <h2>Start a session</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Start session</button>
+  </form>
+
+  {% if sessions %}
+    <h2>Past sessions</h2>
+    <ul>
+      {% for s in sessions %}
+        <li><a href="{% url 'interview:detail' pk=s.pk %}">{{ s.track }} · {{ s.difficulty }} · {{ s.status }}{% if s.overall_score != None %} · {{ s.overall_score }}/100{% endif %}</a>
+        <small>({{ s.created_at|date:"j M Y, H:i" }})</small></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

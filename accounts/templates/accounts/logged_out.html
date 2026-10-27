@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Signed out — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Signed out</h1>
+  <p>You are signed out of HireSense AI.</p>
+  <p><a href="{% url 'accounts:login' %}">Sign in again</a></p>
+{% endblock %}

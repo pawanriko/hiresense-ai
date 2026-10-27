@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% comment %}
+Login page. The ``form`` variable comes from Django's LoginView — we did
+not build it: it renders username + password fields and, on failure, an
+error message. ``{{ form.as_p }}`` renders each field wrapped in a <p>.
+{% csrf_token %} is Django's cross-site-request-forgery protection: a hidden
+token proving this form really came from our site. Never remove it from a
+POST form, or Django will reject the submission with a 403.
+
+GOOGLE BUTTON, AND WHY IT IS BEHIND AN {% if %}: allauth's
+{% provider_login_url "google" %} tag ERRORS when no Google app is
+configured (there is no login URL to build). So the button only renders
+when ``google_oauth_configured`` is True — i.e. both env vars are set
+(see accounts/context_processors.py). When they are absent the page
+instead says plainly that Google sign-in is not set up, and the demo
+login below still works.
+{% endcomment %}
+{% load socialaccount %}
+{% block title %}Sign in — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Sign in to HireSense AI</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Sign in</button>
+  </form>
+  {% if google_oauth_configured %}
+    <p><a href="{% provider_login_url "google" %}">Sign in with Google</a></p>
+  {% else %}
+    <p><small>Google sign-in is not configured yet — add
+    <code>GOOGLE_OAUTH_CLIENT_ID</code> and
+    <code>GOOGLE_OAUTH_CLIENT_SECRET</code> (see the README) and restart
+    the server to enable it.</small></p>
+  {% endif %}
+  <div class="card">
+    <strong>Demo account</strong> (for learning, no real signup yet):<br>
+    Username: <code>demo</code><br>
+    Password: <code>demo1234</code><br>
+    <small>Created with <code>python manage.py seed_demo</code>.</small>
+  </div>
+{% endblock %}

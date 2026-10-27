@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% comment %}
+Upload page. ``enctype="multipart/form-data"`` is REQUIRED for file uploads:
+without it the browser sends only the filename, not the file bytes, and the
+form arrives empty. Another classic beginner bug — now you know.
+{% endcomment %}
+{% block title %}Upload resume — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Upload a resume</h1>
+  <p>PDF or DOCX only. Your file is scored on this machine — nothing is sent
+  to any AI service or outside server.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Score my resume</button>
+  </form>
+{% endblock %}

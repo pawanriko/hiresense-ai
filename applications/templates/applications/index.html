@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% comment %}
+Application tracker. The create form is on top; below it, status counts
+(Applied / Interview / Offer / Rejected, like the original dashboard)
+and the list, recently updated first. Each row has a status dropdown
+that posts back here and a link to the edit page.
+{% endcomment %}
+{% block title %}Applications — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Applications</h1>
+  <p><a href="{% url 'applications:tasks' %}">Gap tasks</a> · <a href="{% url 'dashboard:home' %}">Back to Dashboard</a></p>
+
+  <h2>Track a new application</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    {{ form.as_p }}
+    <button type="submit">Add application</button>
+  </form>
+
+  <h2>Pipeline</h2>
+  <p>
+    {% for status, count in counts.items %}
+      {{ status }}: {{ count }}{% if not forloop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+
+  {% if applications %}
+    <ul>
+      {% for application in applications %}
+        <li class="card">
+          <a href="{% url 'applications:detail' pk=application.pk %}">{{ application.role }} at {{ application.company }}</a>
+          — {{ application.status }}
+          <form class="inline" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_status">
+            <input type="hidden" name="application_id" value="{{ application.pk }}">
+            <select name="status" onchange="this.form.submit()">
+              {% for status in statuses %}
+                <option value="{{ status }}" {% if status == application.status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% if application.notes %}<br><small>{{ application.notes }}</small>{% endif %}
+          <br><small>Updated {{ application.updated_at|date:"j M Y, H:i" }}</small>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No applications yet. Add your first one above.</p>
+  {% endif %}
+{% endblock %}

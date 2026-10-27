@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% comment %}
+One application: edit everything (company, role, status, notes, JD link)
+or delete it. Deleting is a POST with a confirm step in the browser, so
+a stray link click can never remove a row.
+{% endcomment %}
+{% block title %}Edit application — HireSense AI{% endblock %}
+{% block content %}
+  <h1>{{ application.role }} at {{ application.company }}</h1>
+  <p><small>Status: {{ application.status }} · Updated {{ application.updated_at|date:"j M Y, H:i" }}</small></p>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save">
+    {{ form.as_p }}
+    <button type="submit">Save changes</button>
+  </form>
+
+  <form method="post" onsubmit="return confirm('Delete this application?')">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete">
+    <button type="submit">Delete application</button>
+  </form>
+
+  <p><a href="{% url 'applications:index' %}">Back to Applications</a></p>
+{% endblock %}
