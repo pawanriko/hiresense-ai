@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% comment %}
+Interview session page — three states, one template:
+- in progress + current question: the question, the answer form, and the
+  feedback from the just-answered question (if any).
+- in progress + no current question: cannot happen (all-answered sessions
+  complete on save), but the completed branch below covers it safely.
+- completed: the overall report (topic scores, weakest areas, weakest
+  question) plus the full transcript.
+{% endcomment %}
+{% block title %}Interview — {{ session.track }} — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Mock Interview — {{ session.track }} · {{ session.difficulty }}</h1>
+  <p><small>Started {{ session.created_at|date:"j M Y, H:i" }} · status: {{ session.status }}</small></p>
+
+  {% if session.status == "in_progress" and current %}
+    <h2>Question {{ answered_count|add:1 }} of {{ session.transcript|length }}</h2>
+    <p><small>Topic: {{ current.topic }}</small></p>
+    <h3>{{ current.question }}</h3>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Submit answer</button>
+    </form>
+
+    {% if last_answered %}
+      <div class="card">
+        <h3>Feedback ({{ last_answered.source|default:"checklist" }}) — overall {{ last_answered.overall }}/100</h3>
+        <p>Relevance {{ last_answered.scores.relevance }} · Depth {{ last_answered.scores.depth }} · Structure {{ last_answered.scores.structure }} · Confidence {{ last_answered.scores.confidence }} · Conciseness {{ last_answered.scores.conciseness }}</p>
+        <p>{{ last_answered.feedback }}</p>
+      </div>
+    {% endif %}
+
+    {% if answered_count %}
+      <h2>Answers so far</h2>
+      {% for item in session.transcript %}
+        {% if item.answer != None %}
+          <div class="card">
+            <p><strong>Q: {{ item.question }}</strong></p>
+            <p>Score {{ item.overall }}/100 — {{ item.feedback }}</p>
+          </div>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+
+  {% if session.status == "completed" %}
+    <h2>Interview report — {{ session.overall_score }}/100</h2>
+    <p><small>{{ session.track }} · {{ session.difficulty }} · feedback: {{ session.report.feedback_source|default:"checklist" }}</small></p>
+
+    {% if session.report.topic_scores %}
+      <h3>Scores by topic</h3>
+      <ul>
+        {% for t in session.report.topic_scores %}
+          <li>{{ t.topic }}: {{ t.score }}/100</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if session.report.weakest_areas %}
+      <p><strong>Weakest areas:</strong> {{ session.report.weakest_areas|join:", " }}</p>
+      {# Pushes each weakest area as a "Practise interview topic: <area>" #}
+      {# task (the original's exact titles/notes). Already-pushed areas #}
+      {# are skipped, never copied. #}
+      <form method="post" action="{% url 'applications:push_from_interview' pk=session.pk %}">
+        {% csrf_token %}
+        <button type="submit">Push weakest areas to gap tasks</button>
+      </form>
+    {% endif %}
+
+    {% if session.report.weakest_question %}
+      <div class="card">
+        <h3>Weakest question</h3>
+        <p>Q: {{ session.report.weakest_question.question }}</p>
+        <p>Your answer: {{ session.report.weakest_question.answer }}</p>
+        <p>Feedback: {{ session.report.weakest_question.feedback }}</p>
+      </div>
+    {% endif %}
+
+    <h2>Full transcript</h2>
+    {% for item in session.transcript %}
+      <div class="card">
+        <p><strong>Q: {{ item.question }}</strong></p>
+        <p>Your answer: {{ item.answer }}</p>
+        <p>Score {{ item.overall }}/100 — {{ item.feedback }}</p>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <p><a href="{% url 'interview:index' %}">Back to Mock Interview</a></p>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% comment %}
+JD detail page — the original page's section 2 (criteria) and section 3
+(run the match). Three POST actions share this page, told apart by the
+hidden "action" field: save_criteria, redraft, run_match. Scoring always
+uses the SAVED criteria, never unsaved edits — that is the original's rule
+("approve the criteria, then run the engine").
+{% endcomment %}
+{% block title %}{{ jd.title }} — JD Match — HireSense AI{% endblock %}
+{% block content %}
+  <h1>{{ jd.title }}{% if jd.company %} · {{ jd.company }}{% endif %}</h1>
+  <p><small>Saved {{ jd.created_at|date:"j M Y, H:i" }}</small></p>
+  {% if message %}<p><strong>{{ message }}</strong></p>{% endif %}
+
+  <h2>2 · Criteria — review and edit before scoring</h2>
+  <p>Draft source: keyword scan of the JD text. Total weight does not need
+  to be exactly 100 — the engine uses a weighted average — but keep weights
+  near 100 for readability.</p>
+  <form method="post">
+    {% csrf_token %}
+    {# The management form is REQUIRED for formsets: it tells Django how many rows were sent. Forgetting it is a classic beginner bug. #}
+    {{ formset.management_form }}
+    {% for form in formset %}
+      <div class="card">
+        {{ form.as_p }}
+        {% if formset.can_delete %}<p><label>Delete? {{ form.DELETE }}</label></p>{% endif %}
+      </div>
+    {% endfor %}
+    <input type="hidden" name="action" value="save_criteria">
+    <button type="submit">Save criteria</button>
+  </form>
+  <form method="post" class="inline">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="redraft">
+    <button type="submit">Re-draft criteria from JD text (discards edits)</button>
+  </form>
+  {% if not jd.criteria %}
+    <p>No criteria detected. Add rows above, or re-draft from the JD text.</p>
+  {% endif %}
+
+  <h2>3 · Run the match</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ run_form.as_p }}
+    <input type="hidden" name="action" value="run_match">
+    <button type="submit">Run match</button>
+  </form>
+  <p><small>Pick a resume to enable Run match. Save a JD's criteria first — scoring uses the saved criteria.</small></p>
+  <p><a href="{% url 'jdmatch:index' %}">Back to JD Match</a></p>
+{% endblock %}

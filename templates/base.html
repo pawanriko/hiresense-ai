@@ -1,0 +1,71 @@
+{% comment %}
+Base template — every page extends this one, so the header and footer are
+written exactly once. HOW IT WORKS: a child template starts with
+{% extends "base.html" %} and fills in the {% block %} placeholders below.
+Anything outside a block in a child template is ignored, which trips up
+every beginner exactly once — now you know.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HireSense AI{% endblock %}</title>
+  <style>
+    /* Kept inline on purpose: zero static-files setup for slice 1. */
+    body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 860px;
+           padding: 0 1rem 3rem; color: #1a1a1a; line-height: 1.5; }
+    header { display: flex; justify-content: space-between; align-items: center;
+             border-bottom: 2px solid #222; padding: 1rem 0; }
+    header a { color: #1a1a1a; text-decoration: none; margin-right: 1rem; }
+    header a:hover { text-decoration: underline; }
+    footer { border-top: 1px solid #ccc; margin-top: 3rem; padding-top: 1rem;
+             color: #666; font-size: 0.9rem; }
+    .pass { color: #1a7f37; } .fail { color: #b3261e; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .score { font-size: 2.5rem; font-weight: bold; }
+    button, input[type="submit"] { cursor: pointer; padding: 0.4rem 1rem; }
+    .inline { display: inline; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong><a href="{% url 'dashboard:home' %}">HireSense AI</a></strong>
+    <nav>
+      {% if user.is_authenticated %}
+        <a href="{% url 'dashboard:home' %}">Dashboard</a>
+        <a href="{% url 'resumes:upload' %}">Upload resume</a>
+        <a href="{% url 'jdmatch:index' %}">JD Match</a>
+        <a href="{% url 'interview:index' %}">Mock Interview</a>
+        <a href="{% url 'applications:index' %}">Applications</a>
+        {# Logout must be a POST form, not a link (see accounts/views.py). #}
+        <form class="inline" method="post" action="{% url 'accounts:logout' %}">
+          {% csrf_token %}
+          <button type="submit">Sign out ({{ user.username }})</button>
+        </form>
+      {% else %}
+        <a href="{% url 'accounts:login' %}">Sign in</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {# Flash messages: one view can leave a short note (e.g. the Google
+    guard explaining sign-in isn't configured) for the NEXT page to show.
+    The messages framework stores them in the session and clears them
+    once displayed, so they appear exactly once. #}
+    {% if messages %}
+      {% for message in messages %}
+        <p class="card">{{ message }}</p>
+      {% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <p>HireSense AI — candidate-side interview prep.</p>
+    <p>Scoring is deterministic: AI never computes a score. Scores come from
+    the rules in <code>resumes/scoring.py</code>, with evidence quotes.</p>
+  </footer>
+</body>
+</html>

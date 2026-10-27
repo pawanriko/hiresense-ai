@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% comment %}
+Match result page. ``analysis.criteria_results`` and ``analysis.gaps``
+are the JSON stored at scoring time, so this template only displays them:
+score, status, the verbatim evidence quote with its section, and for every
+weak/missing criterion the gap fix action. No recomputation happens here.
+{% endcomment %}
+{% block title %}Match score — HireSense AI{% endblock %}
+{% block content %}
+  <h1>{{ analysis.jd.title }}{% if analysis.jd.company %} · {{ analysis.jd.company }}{% endif %}</h1>
+  <p>Resume: {{ analysis.resume.original_name }}</p>
+  {# floatformat:"-1" drops a trailing ".0" (50.0 -> 50) but keeps real decimals (66.7), matching the original app's display. #}
+  <p>Match score: <span class="score">{{ analysis.match_score|floatformat:"-1" }}/100</span></p>
+  <p><small>Scored {{ analysis.created_at|date:"j M Y, H:i" }}. Score = Σ(weight × criterion score) / Σweights. Every point below is backed by a quote from your resume.</small></p>
+
+  {% for result in analysis.criteria_results %}
+    <div class="card">
+      <p><strong>{{ result.name }}</strong> <small>· weight {{ result.weight }}</small>
+      <span>— {{ result.status }} · {{ result.score }}</span></p>
+      <p>
+        {% if result.evidence %}“{{ result.evidence }}” <small>({{ result.section }})</small>
+        {% else %}No evidence found in this resume.{% endif %}
+      </p>
+    </div>
+  {% endfor %}
+
+  {% if analysis.gaps %}
+    <h2>Gaps — each one is fixable</h2>
+    <ul>
+      {% for gap in analysis.gaps %}
+        <li class="card"><strong>{{ gap.criterion }} ({{ gap.current_status }})</strong> — {{ gap.suggested_action }}</li>
+      {% endfor %}
+    </ul>
+    {# Pushes each gap as a "Close gap: <criterion>" task (the original's #}
+    {# exact titles/actions). Already-pushed gaps are skipped, never copied. #}
+    <form method="post" action="{% url 'applications:push_from_analysis' pk=analysis.pk %}">
+      {% csrf_token %}
+      <button type="submit">Push gaps to gap tasks</button>
+    </form>
+  {% endif %}
+
+  <p><a href="{% url 'jdmatch:detail' pk=analysis.jd.pk %}">Back to this JD's criteria</a> · <a href="{% url 'jdmatch:index' %}">Back to JD Match</a></p>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% comment %}
+Gap-task checklist. Filter links (open / done / all) narrow the list;
+"open" means anything not done, exactly like the original dashboard's
+open count. Each task has a done/undone toggle (a checkbox-style button)
+and a status dropdown (todo / doing / done, the original's three states).
+{% endcomment %}
+{% block title %}Gap tasks — HireSense AI{% endblock %}
+{% block content %}
+  <h1>Gap tasks</h1>
+  <p>{{ open_count }} open · {{ done_count }} done · <a href="{% url 'applications:index' %}">Applications</a></p>
+
+  <h2>Add a task</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    {{ form.as_p }}
+    <button type="submit">Add task</button>
+  </form>
+
+  <p>
+    Show:
+    <a href="?filter=open">Open</a> ·
+    <a href="?filter=done">Done</a> ·
+    <a href="?filter=all">All</a>
+    (currently: {{ filter }})
+  </p>
+
+  {% if tasks %}
+    <ul>
+      {% for task in tasks %}
+        <li class="card">
+          <form class="inline" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="task_id" value="{{ task.pk }}">
+            <button type="submit" title="Toggle done/undone">{% if task.status == "done" %}☑{% else %}☐{% endif %}</button>
+          </form>
+          <span {% if task.status == "done" %}style="text-decoration: line-through; color: #888;"{% endif %}>{{ task.title }}</span>
+          <form class="inline" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_status">
+            <input type="hidden" name="task_id" value="{{ task.pk }}">
+            <select name="status" onchange="this.form.submit()">
+              {% for status in statuses %}
+                <option value="{{ status }}" {% if status == task.status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% if task.source_gap %}<br><small>{{ task.source_gap }}</small>{% endif %}
+          {% if task.analysis %}<br><small>From JD Match: {{ task.analysis.jd.title }}</small>{% endif %}
+          {% if task.interview_session %}<br><small>From {{ task.interview_session.track }} interview</small>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No tasks in this view yet. Push gaps from a JD Match result or an interview report, or add one by hand above.</p>
+  {% endif %}
+{% endblock %}
