@@ -8,3 +8,7 @@ media/
 .env
 .env.*
 !.env.example
+# React frontend (frontend/): installed packages and the production
+# build output are generated, never committed.
+frontend/node_modules/
+frontend/dist/
