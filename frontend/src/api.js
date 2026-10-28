@@ -80,4 +80,10 @@ export const api = {
   runAnalysis: (jd_id, resume_id) =>
     request('/api/jdmatch/analyses/', { method: 'POST', body: { jd_id, resume_id } }),
   analysisDetail: (id) => request(`/api/jdmatch/analyses/${id}/`),
+  interviewSessions: () => request('/api/interview/sessions/'),
+  startSession: (track, difficulty, company, jd_text) =>
+    request('/api/interview/sessions/', { method: 'POST', body: { track, difficulty, company, jd_text } }),
+  interviewDetail: (id) => request(`/api/interview/sessions/${id}/`),
+  answerQuestion: (id, answer) =>
+    request(`/api/interview/sessions/${id}/answer/`, { method: 'POST', body: { answer } }),
 }
