@@ -104,3 +104,118 @@ class DashboardApiTests(TestCase):
         data = self.client.get("/api/dashboard/").json()
         self.assertEqual(data["resumes"], [])
         self.assertIsNone(data["latest"])
+
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+
+def make_docx_bytes():
+    """Build a small but realistic resume .docx in memory, so upload
+    tests exercise real parsing + scoring instead of a fake file."""
+    from io import BytesIO
+
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("Pawan Kumar", level=0)
+    doc.add_paragraph("pawanriko@gmail.com | github.com/pawanriko | New Delhi")
+    doc.add_heading("Summary", level=1)
+    doc.add_paragraph(
+        "BCA student building AI and web projects, learning DSA, "
+        "Python, and JavaScript.")
+    doc.add_heading("Skills", level=1)
+    doc.add_paragraph("Python, Django, JavaScript, React, SQL, Git")
+    doc.add_heading("Experience", level=1)
+    doc.add_paragraph(
+        "Built HireSense AI, an interview-prep platform used by 200 "
+        "students, improving mock scores by 30%.")
+    doc.add_paragraph(
+        "Developed a Django resume scorer processing 50 resumes per minute.")
+    doc.add_heading("Projects", level=1)
+    doc.add_paragraph(
+        "Created a task tracker app with React and Django serving 100 users.")
+    doc.add_heading("Education", level=1)
+    doc.add_paragraph("BCA, IITM Janakpuri, 2023 - 2026")
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+class ResumeApiTests(TestCase):
+    def test_upload_docx_success(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/resumes/upload/",
+            {"file": SimpleUploadedFile(
+                "resume.docx", make_docx_bytes())},
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["original_name"], "resume.docx")
+        self.assertIsInstance(data["ats_score"], int)
+        self.assertTrue(0 <= data["ats_score"] <= 100)
+        names = [c["name"] for c in data["breakdown"]["categories"]]
+        self.assertEqual(
+            names,
+            ["Sections", "Quantification", "Action verbs",
+             "Contact & links", "Length & format"])
+
+    def test_upload_txt_rejected(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/resumes/upload/",
+            {"file": SimpleUploadedFile("notes.txt", b"hello")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("PDF and DOCX", response.json()["detail"])
+
+    def test_upload_no_file(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post("/api/resumes/upload/", {})
+        self.assertEqual(response.status_code, 400)
+
+    def test_upload_corrupt_pdf(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/resumes/upload/",
+            {"file": SimpleUploadedFile("broken.pdf", b"not a pdf at all")},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_list_only_own(self):
+        user = make_user("demo")
+        other = make_user("other")
+        make_resume(user, "mine.pdf", 60)
+        make_resume(other, "theirs.pdf", 90)
+        self.client.force_login(user)
+        data = self.client.get("/api/resumes/").json()
+        self.assertEqual(len(data["resumes"]), 1)
+        self.assertEqual(data["resumes"][0]["original_name"], "mine.pdf")
+
+    def test_detail_own_and_other_404(self):
+        user = make_user("demo")
+        other = make_user("other")
+        mine = make_resume(user, "mine.pdf", 60)
+        theirs = make_resume(other, "theirs.pdf", 90)
+        self.client.force_login(user)
+        detail = self.client.get(f"/api/resumes/{mine.id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["ats_score"], 60)
+        missing = self.client.get(f"/api/resumes/{theirs.id}/")
+        self.assertEqual(missing.status_code, 404)
+
+    def test_resumes_anonymous_is_401(self):
+        self.assertEqual(self.client.get("/api/resumes/").status_code, 401)
+        response = self.client.post(
+            "/api/resumes/upload/",
+            {"file": SimpleUploadedFile(
+                "resume.docx", make_docx_bytes())},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/resumes/1/").status_code, 401)

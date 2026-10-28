@@ -23,11 +23,15 @@ import json
 
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from applications.models import Application, GapTask
+from resumes.extract import extract_text
+from resumes.forms import ResumeUploadForm
 from resumes.models import Resume
+from resumes.scoring import compute_ats, segment_sections
 
 
 def _unauthenticated():
@@ -108,3 +112,86 @@ def dashboard(request):
         "done_tasks": tasks.filter(status=GapTask.STATUS_DONE).count(),
         "app_counts": app_counts,
     })
+
+
+# ---------------------------------------------------------------------------
+# Resumes (slice B)
+# ---------------------------------------------------------------------------
+
+def _resume_list_json(resume):
+    return {
+        "id": resume.id,
+        "original_name": resume.original_name,
+        "ats_score": resume.ats_score,
+        "created_at": resume.created_at.isoformat(),
+    }
+
+
+def _resume_detail_json(resume):
+    data = _resume_list_json(resume)
+    data["breakdown"] = resume.breakdown
+    data["extracted_text"] = resume.extracted_text
+    return data
+
+
+def resume_list(request):
+    """The signed-in user's resumes, newest first — the React list page."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    resumes = Resume.objects.filter(owner=request.user)
+    return JsonResponse({
+        "resumes": [_resume_list_json(r) for r in resumes],
+    })
+
+
+@require_POST
+def resume_upload(request):
+    """Upload a resume file, score it, save it — the same steps as the
+    HTML upload view (resumes/views.py), but answering JSON.
+    MULTIPART, NOT JSON: a file cannot travel inside a JSON body, so
+    the React client sends FormData and the file arrives in
+    request.FILES. Validation reuses ResumeUploadForm, so the rules
+    (PDF/DOCX only) are identical to the HTML page. One deliberate
+    difference: a corrupt file that the HTML view would crash on
+    (HTTP 500) answers 400 here, because an API client needs an error
+    it can show, not a stack trace."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    form = ResumeUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        errors = form.errors.get("file", ["Invalid file."])
+        return JsonResponse({"detail": errors[0]}, status=400)
+    uploaded = form.cleaned_data["file"]
+    try:
+        text = extract_text(uploaded, uploaded.name)
+    except Exception:
+        # Extraction only: corrupt PDFs/DOCXs land here. Scoring and
+        # saving keep their normal errors, so real bugs still surface.
+        return JsonResponse(
+            {"detail": "Could not read that file. It may be corrupt — "
+                       "try re-exporting it as PDF or DOCX."},
+            status=400)
+    sections = segment_sections(text)
+    result = compute_ats(sections, text)
+    resume = Resume.objects.create(
+        owner=request.user,
+        file=uploaded,
+        original_name=uploaded.name,
+        extracted_text=text,
+        ats_score=result["score"],
+        breakdown=result,
+    )
+    return JsonResponse(_resume_detail_json(resume), status=201)
+
+
+def resume_detail(request, pk):
+    """One resume with its full ATS breakdown. Owner-only like the HTML
+    result page — another user's id answers 404, and the body is JSON
+    (get_object_or_404 would return Django's HTML 404 page)."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    try:
+        resume = Resume.objects.get(pk=pk, owner=request.user)
+    except Resume.DoesNotExist:
+        return JsonResponse({"detail": "Not found."}, status=404)
+    return JsonResponse(_resume_detail_json(resume))
