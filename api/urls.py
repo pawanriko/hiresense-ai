@@ -23,4 +23,10 @@ urlpatterns = [
          name="api-analysis-list"),
     path("jdmatch/analyses/<int:pk>/", views.analysis_detail,
          name="api-analysis-detail"),
+    path("interview/sessions/", views.session_collection,
+         name="api-session-list"),
+    path("interview/sessions/<int:pk>/", views.session_detail,
+         name="api-session-detail"),
+    path("interview/sessions/<int:pk>/answer/", views.session_answer,
+         name="api-session-answer"),
 ]

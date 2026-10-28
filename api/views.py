@@ -28,11 +28,23 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 
 from applications.models import Application, GapTask
+from interview.models import InterviewSession
 from jdmatch.models import JobDescription, MatchAnalysis
 from resumes.ai_provider import extract_criteria as ai_extract_criteria
+from resumes.ai_provider import (
+    interview_questions as ai_interview_questions,
+)
 from resumes.ai_provider import is_ai_configured
+from resumes.ai_provider import score_answer as ai_score_answer
 from resumes.extract import extract_text
 from resumes.forms import ResumeUploadForm
+from resumes.interview import (
+    TRACKS,
+    build_report,
+    pick_questions,
+    score_answer_checklist,
+    topic_keywords,
+)
 from resumes.models import Resume
 from resumes.scoring import (
     compute_ats,
@@ -448,3 +460,184 @@ def analysis_detail(request, pk):
     if error:
         return error
     return JsonResponse(_analysis_json(analysis))
+
+
+# ---------------------------------------------------------------------------
+# Mock Interview (slice D)
+# ---------------------------------------------------------------------------
+# Mirrors interview/views.py: start a 5-question session (AI questions
+# when configured, else the deterministic bank), answer one question at
+# a time (AI scoring when configured, else the checklist), finish with
+# a report. One deliberate difference: answering a completed session
+# returns the finished session unchanged (200) instead of the HTML
+# page's redirect — an API client needs data, not a redirect target.
+
+_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+def _session_list_json(session):
+    transcript = session.transcript or []
+    answered = sum(1 for i in transcript if i.get("answer") is not None)
+    return {
+        "id": session.id,
+        "track": session.track,
+        "difficulty": session.difficulty,
+        "company": session.company,
+        "question_source": session.question_source,
+        "status": session.status,
+        "overall_score": session.overall_score,
+        "answered_count": answered,
+        "total": len(transcript),
+        "created_at": session.created_at.isoformat(),
+    }
+
+
+def _session_json(session):
+    data = _session_list_json(session)
+    transcript = session.transcript or []
+    data["transcript"] = transcript
+    data["report"] = session.report
+    data["current"] = next(
+        (i for i in transcript if i.get("answer") is None), None)
+    return data
+
+
+@require_http_methods(["GET", "POST"])
+def session_collection(request):
+    """GET: the user's sessions, newest first. POST: start a session —
+    {track, difficulty, optional company, optional jd_text} — with 5
+    questions drafted the same way the HTML page drafts them."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    if request.method == "GET":
+        sessions = InterviewSession.objects.filter(owner=request.user)
+        return JsonResponse({
+            "sessions": [_session_list_json(s) for s in sessions],
+        })
+    body, error = _json_body(request)
+    if error:
+        return error
+    track = body.get("track")
+    difficulty = body.get("difficulty")
+    company = str(body.get("company", "") or "").strip()
+    jd_text = body.get("jd_text", "") or ""
+    if track not in TRACKS:
+        return JsonResponse({"detail": f"Invalid track: {track!r}."},
+                            status=400)
+    if difficulty not in _DIFFICULTIES:
+        return JsonResponse(
+            {"detail": f"Invalid difficulty: {difficulty!r}."}, status=400)
+    if len(company) > 255:
+        return JsonResponse({"detail": "Company is too long."}, status=400)
+    if not isinstance(jd_text, str):
+        return JsonResponse({"detail": "Invalid JD text."}, status=400)
+    questions = None
+    question_source = "bank"
+    if is_ai_configured():
+        ai_questions = ai_interview_questions(
+            track, difficulty, jd_text, company)
+        if ai_questions:
+            questions = ai_questions
+            question_source = "ai"
+    if questions is None:
+        questions = pick_questions(track, difficulty)
+    transcript = [
+        {
+            "question": q["question"],
+            "topic": q["topic"],
+            "answer": None,
+            "feedback": None,
+            "scores": None,
+            "overall": None,
+            "source": None,
+        }
+        for q in questions
+    ]
+    session = InterviewSession.objects.create(
+        owner=request.user,
+        track=track,
+        difficulty=difficulty,
+        company=company,
+        question_source=question_source,
+        transcript=transcript,
+    )
+    return JsonResponse(_session_json(session), status=201)
+
+
+def session_detail(request, pk):
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    session, error = _get_owned(InterviewSession, pk, request.user)
+    if error:
+        return error
+    return JsonResponse(_session_json(session))
+
+
+@require_POST
+def session_answer(request, pk):
+    """Score ONE answer against the current (first unanswered)
+    question — AI scoring first when configured, checklist otherwise
+    (and checklist again if the AI call fails), exactly like the HTML
+    page. If it was the last question, the report is built and the
+    session completes."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    session, error = _get_owned(InterviewSession, pk, request.user)
+    if error:
+        return error
+    if session.status != InterviewSession.STATUS_IN_PROGRESS:
+        # Completed sessions never change: same rule as the HTML view,
+        # which redirects back to the report instead of erroring.
+        return JsonResponse(_session_json(session))
+    body, error = _json_body(request)
+    if error:
+        return error
+    answer = body.get("answer", "")
+    if not isinstance(answer, str) or len(answer.strip()) < 5:
+        return JsonResponse(
+            {"detail": "Please write an answer of at least a few words."},
+            status=400)
+    answer = answer.strip()
+    transcript = session.transcript
+    index = next(
+        (i for i, item in enumerate(transcript)
+         if item.get("answer") is None),
+        None,
+    )
+    if index is None:
+        return JsonResponse(_session_json(session))
+    current = transcript[index]
+    checked = None
+    answer_source = "checklist"
+    if is_ai_configured():
+        ai_checked = ai_score_answer(current["question"], answer)
+        if ai_checked:
+            checked = ai_checked
+            answer_source = "ai"
+    if checked is None:
+        checked = score_answer_checklist(
+            current["question"], answer, topic_keywords(current["topic"]))
+    transcript[index] = {
+        **current,
+        "answer": answer,
+        "feedback": checked["feedback"],
+        "scores": {
+            "relevance": checked["relevance"],
+            "depth": checked["depth"],
+            "structure": checked["structure"],
+            "confidence": checked["confidence"],
+            "conciseness": checked["conciseness"],
+        },
+        "overall": checked["overall"],
+        "source": answer_source,
+    }
+    session.transcript = transcript
+    if all(item.get("answer") is not None for item in transcript):
+        answered = [item for item in transcript
+                    if item.get("overall") is not None]
+        overall_score, report = build_report(answered)
+        session.status = InterviewSession.STATUS_COMPLETED
+        session.overall_score = overall_score
+        session.report = report
+    session.save()
+    return JsonResponse(_session_json(session))

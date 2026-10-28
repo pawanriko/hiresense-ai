@@ -419,3 +419,120 @@ class JDMatchApiTests(TestCase):
             self.client.get("/api/jdmatch/jds/").status_code, 401)
         self.assertEqual(
             self.client.get("/api/jdmatch/analyses/").status_code, 401)
+
+
+ANSWER = (
+    "I led a team of four students to build a college event website "
+    "using React, delivering it two weeks early and increasing "
+    "registrations by 40%."
+)
+
+
+def start_session(client, track="HR", difficulty="easy"):
+    return client.post(
+        "/api/interview/sessions/",
+        {"track": track, "difficulty": difficulty},
+        content_type="application/json",
+    )
+
+
+class InterviewApiTests(TestCase):
+    def test_start_session_success(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = start_session(self.client)
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["track"], "HR")
+        self.assertEqual(data["status"], "in_progress")
+        # No AI keys on this machine, so the bank supplies the questions.
+        self.assertEqual(data["question_source"], "bank")
+        self.assertEqual(len(data["transcript"]), 5)
+        self.assertTrue(all(i["answer"] is None for i in data["transcript"]))
+        self.assertEqual(data["answered_count"], 0)
+        self.assertIsNotNone(data["current"])
+
+    def test_start_session_validation(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        self.assertEqual(
+            start_session(self.client, track="Magic").status_code, 400)
+        self.assertEqual(
+            start_session(self.client, difficulty="extreme").status_code, 400)
+
+    def test_answer_flow_and_resume(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        session = start_session(self.client).json()
+        first_question = session["current"]["question"]
+        response = self.client.post(
+            f"/api/interview/sessions/{session['id']}/answer/",
+            {"answer": ANSWER},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["answered_count"], 1)
+        item = data["transcript"][0]
+        self.assertEqual(item["answer"], ANSWER)
+        self.assertIsInstance(item["overall"], int)
+        self.assertTrue(item["feedback"])
+        # No AI keys here, so the checklist scores it.
+        self.assertEqual(item["source"], "checklist")
+        # An abandoned session resumes at the next unanswered question.
+        self.assertEqual(data["current"]["question"],
+                         data["transcript"][1]["question"])
+        self.assertNotEqual(data["current"]["question"], first_question)
+
+    def test_answer_too_short(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        session = start_session(self.client).json()
+        response = self.client.post(
+            f"/api/interview/sessions/{session['id']}/answer/",
+            {"answer": "hi"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("few words", response.json()["detail"])
+
+    def test_complete_flow_and_completed_unchanged(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        session = start_session(self.client).json()
+        data = session
+        for _ in range(5):
+            data = self.client.post(
+                f"/api/interview/sessions/{session['id']}/answer/",
+                {"answer": ANSWER},
+                content_type="application/json",
+            ).json()
+        self.assertEqual(data["status"], "completed")
+        self.assertIsInstance(data["overall_score"], int)
+        self.assertEqual(data["report"]["feedback_source"], "checklist")
+        self.assertIn("topic_scores", data["report"])
+        self.assertIn("weakest_areas", data["report"])
+        self.assertIn("weakest_question", data["report"])
+        before = [i["answer"] for i in data["transcript"]]
+        again = self.client.post(
+            f"/api/interview/sessions/{session['id']}/answer/",
+            {"answer": ANSWER},
+            content_type="application/json",
+        ).json()
+        self.assertEqual(again["status"], "completed")
+        self.assertEqual([i["answer"] for i in again["transcript"]], before)
+
+    def test_session_ownership_and_anonymous(self):
+        user = make_user("demo")
+        other = make_user("other")
+        self.client.force_login(user)
+        session = start_session(self.client).json()
+        self.client.force_login(other)
+        self.assertEqual(
+            self.client.get(
+                f"/api/interview/sessions/{session['id']}/").status_code, 404)
+        self.assertEqual(len(
+            self.client.get("/api/interview/sessions/").json()["sessions"]), 0)
+        self.client.logout()
+        self.assertEqual(
+            self.client.get("/api/interview/sessions/").status_code, 401)
