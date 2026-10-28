@@ -1,0 +1,54 @@
+/* HireSense AI — React frontend styles (slice A).
+   Plain CSS on purpose: one file, no build plugins, every rule visible.
+   The layout mirrors the Django pages it replaces: a centered column,
+   a header bar, cards for each block. Dark/light theme lands later. */
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+body { margin: 0; }
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #222;
+  padding: 1rem;
+}
+header nav { display: flex; gap: 1rem; align-items: center; }
+header a { color: #1a1a1a; text-decoration: none; }
+header a:hover, header a.active { text-decoration: underline; }
+main { max-width: 1080px; margin: 0 auto; padding: 0 1rem 3rem; }
+footer {
+  border-top: 1px solid #ccc;
+  margin: 3rem auto 0;
+  padding: 1rem;
+  max-width: 1080px;
+  color: #666;
+  font-size: 0.9rem;
+}
+.narrow { max-width: 480px; }
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+.row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.row .card { margin: 0; flex: 1 1 140px; }
+.score { font-size: 2.5rem; font-weight: bold; margin: 0; }
+.muted { color: #666; }
+.error { color: #b3261e; }
+.list { list-style: none; padding: 0; }
+form { display: grid; gap: 1rem; max-width: 480px; }
+label { display: grid; gap: 0.25rem; }
+input { padding: 0.5rem; font: inherit; border: 1px solid #ccc; border-radius: 6px; }
+button {
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  border: 1px solid #222;
+  border-radius: 6px;
+  background: #fff;
+}
+button:disabled { opacity: 0.6; cursor: wait; }
