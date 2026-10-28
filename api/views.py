@@ -22,12 +22,13 @@ dependencies, which keeps Windows setup as one pip install.
 import json
 
 from django.contrib.auth import authenticate, login, logout
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 
 from applications.models import Application, GapTask
+from applications.views import push_analysis_gaps, push_interview_areas
 from interview.models import InterviewSession
 from jdmatch.models import JobDescription, MatchAnalysis
 from resumes.ai_provider import extract_criteria as ai_extract_criteria
@@ -641,3 +642,258 @@ def session_answer(request, pk):
         session.report = report
     session.save()
     return JsonResponse(_session_json(session))
+
+
+# ---------------------------------------------------------------------------
+# Applications + gap tasks (slice E)
+# ---------------------------------------------------------------------------
+# Mirrors applications/views.py: tracker (create/edit/delete, status
+# counts, recently-updated-first) + checklist (create, status changes,
+# open/done/all filters) + pushing gaps from analyses and weakest areas
+# from completed interviews, with the same duplicate skipping. The push
+# helpers are reused from applications/views.py — they are pure logic,
+# not page views — instead of duplicating the title/action rules.
+
+_APP_STATUSES = {"Applied", "Interview", "Offer", "Rejected"}
+_TASK_STATUSES = {"todo", "doing", "done"}
+
+
+def _application_json(app):
+    return {
+        "id": app.id,
+        "company": app.company,
+        "role": app.role,
+        "status": app.status,
+        "notes": app.notes,
+        "jd_id": app.jd_id,
+        "jd_title": app.jd.title if app.jd else None,
+        "created_at": app.created_at.isoformat(),
+        "updated_at": app.updated_at.isoformat(),
+    }
+
+
+def _task_json(task):
+    return {
+        "id": task.id,
+        "title": task.title,
+        "source_gap": task.source_gap,
+        "status": task.status,
+        "analysis_id": task.analysis_id,
+        "interview_session_id": task.interview_session_id,
+        "created_at": task.created_at.isoformat(),
+    }
+
+
+def _owned_jd_or_error(user, jd_id):
+    """A JD link inside an application form: the JD must be the user's
+    own. Unlike a top-level lookup, a bad link here is a validation
+    error (400), not a missing resource (404)."""
+    try:
+        return JobDescription.objects.get(pk=jd_id, owner=user), None
+    except JobDescription.DoesNotExist:
+        return None, JsonResponse(
+            {"detail": "Invalid job description."}, status=400)
+
+
+@require_http_methods(["GET", "POST"])
+def application_collection(request):
+    """GET: the user's applications, recently updated first, plus the
+    per-stage counts. POST: create one — company and role required,
+    status from the four stages, JD link optional and own-only."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    if request.method == "GET":
+        apps = Application.objects.filter(owner=request.user)
+        counts = {
+            status: Application.objects.filter(
+                owner=request.user, status=status).count()
+            for status, _label in Application.STATUS_CHOICES
+        }
+        return JsonResponse({
+            "applications": [_application_json(a) for a in apps],
+            "counts": counts,
+        })
+    body, error = _json_body(request)
+    if error:
+        return error
+    company = str(body.get("company", "") or "").strip()
+    role = str(body.get("role", "") or "").strip()
+    status = body.get("status", Application.STATUS_APPLIED)
+    notes = body.get("notes", "") or ""
+    if not company or not role:
+        return JsonResponse(
+            {"detail": "Company and role are required."}, status=400)
+    if len(company) > 255 or len(role) > 255:
+        return JsonResponse(
+            {"detail": "Company or role is too long."}, status=400)
+    if status not in _APP_STATUSES:
+        return JsonResponse({"detail": f"Invalid status: {status!r}."},
+                            status=400)
+    if not isinstance(notes, str):
+        return JsonResponse({"detail": "Invalid notes."}, status=400)
+    jd = None
+    if body.get("jd_id") is not None:
+        jd, error = _owned_jd_or_error(request.user, body["jd_id"])
+        if error:
+            return error
+    app = Application.objects.create(
+        owner=request.user, company=company, role=role, status=status,
+        notes=notes, jd=jd,
+    )
+    return JsonResponse(_application_json(app), status=201)
+
+
+@require_http_methods(["GET", "PUT", "DELETE"])
+def application_detail(request, pk):
+    """GET one application. PUT edits it — fields you omit keep their
+    values, which is how the list page's status dropdown works (it
+    sends the whole row with one field changed). DELETE removes it."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    app, error = _get_owned(Application, pk, request.user)
+    if error:
+        return error
+    if request.method == "GET":
+        return JsonResponse(_application_json(app))
+    if request.method == "DELETE":
+        app.delete()
+        return HttpResponse(status=204)
+    body, error = _json_body(request)
+    if error:
+        return error
+    if "company" in body:
+        company = str(body["company"] or "").strip()
+        if not company or len(company) > 255:
+            return JsonResponse(
+                {"detail": "Company is required."}, status=400)
+        app.company = company
+    if "role" in body:
+        role = str(body["role"] or "").strip()
+        if not role or len(role) > 255:
+            return JsonResponse({"detail": "Role is required."}, status=400)
+        app.role = role
+    if "status" in body:
+        if body["status"] not in _APP_STATUSES:
+            return JsonResponse(
+                {"detail": f"Invalid status: {body['status']!r}."},
+                status=400)
+        app.status = body["status"]
+    if "notes" in body:
+        if not isinstance(body["notes"], str):
+            return JsonResponse({"detail": "Invalid notes."}, status=400)
+        app.notes = body["notes"]
+    if "jd_id" in body:
+        if body["jd_id"] is None:
+            app.jd = None
+        else:
+            jd, error = _owned_jd_or_error(request.user, body["jd_id"])
+            if error:
+                return error
+            app.jd = jd
+    app.save()  # auto_now bumps updated_at, moving it to the top
+    return JsonResponse(_application_json(app))
+
+
+@require_http_methods(["GET", "POST"])
+def task_collection(request):
+    """GET: the user's tasks, newest first, filtered by ?filter=
+    (open = not done, done, all — anything else falls back to all,
+    like the HTML page). POST: create a manual task — title required,
+    at most 200 characters."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    if request.method == "GET":
+        task_filter = request.GET.get("filter", "all")
+        all_tasks = GapTask.objects.filter(owner=request.user)
+        if task_filter == "open":
+            shown = all_tasks.exclude(status=GapTask.STATUS_DONE)
+        elif task_filter == "done":
+            shown = all_tasks.filter(status=GapTask.STATUS_DONE)
+        else:
+            task_filter = "all"
+            shown = all_tasks
+        return JsonResponse({
+            "tasks": [_task_json(t) for t in shown],
+            "filter": task_filter,
+            "open_count": all_tasks.exclude(
+                status=GapTask.STATUS_DONE).count(),
+            "done_count": all_tasks.filter(
+                status=GapTask.STATUS_DONE).count(),
+        })
+    body, error = _json_body(request)
+    if error:
+        return error
+    title = str(body.get("title", "") or "").strip()
+    source_gap = body.get("source_gap", "") or ""
+    if not title or len(title) > 200:
+        return JsonResponse(
+            {"detail": "A task title of 1-200 characters is required."},
+            status=400)
+    if not isinstance(source_gap, str):
+        return JsonResponse({"detail": "Invalid source_gap."}, status=400)
+    task = GapTask.objects.create(
+        owner=request.user, title=title, source_gap=source_gap)
+    return JsonResponse(_task_json(task), status=201)
+
+
+@require_http_methods(["PUT"])
+def task_detail(request, pk):
+    """Update a task — status (todo/doing/done), title, or source_gap.
+    The list page's done checkbox is just this endpoint with the
+    toggled status (done -> todo, anything else -> done, like the
+    HTML toggle)."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    task, error = _get_owned(GapTask, pk, request.user)
+    if error:
+        return error
+    body, error = _json_body(request)
+    if error:
+        return error
+    if "status" in body:
+        if body["status"] not in _TASK_STATUSES:
+            return JsonResponse(
+                {"detail": f"Invalid status: {body['status']!r}."},
+                status=400)
+        task.status = body["status"]
+    if "title" in body:
+        title = str(body["title"] or "").strip()
+        if not title or len(title) > 200:
+            return JsonResponse(
+                {"detail": "A task title of 1-200 characters is required."},
+                status=400)
+        task.title = title
+    if "source_gap" in body:
+        if not isinstance(body["source_gap"], str):
+            return JsonResponse({"detail": "Invalid source_gap."},
+                                status=400)
+        task.source_gap = body["source_gap"]
+    task.save()
+    return JsonResponse(_task_json(task))
+
+
+@require_POST
+def push_analysis(request, pk):
+    """Push one analysis's gaps onto the checklist, skipping
+    duplicates. Returns how many tasks were actually created."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    analysis, error = _get_owned(MatchAnalysis, pk, request.user)
+    if error:
+        return error
+    created = push_analysis_gaps(request.user, analysis)
+    return JsonResponse({"created": created})
+
+
+@require_POST
+def push_interview(request, pk):
+    """Push a completed session's weakest areas onto the checklist,
+    skipping duplicates. An in-progress session has no report yet, so
+    pushing it creates nothing (0)."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    session, error = _get_owned(InterviewSession, pk, request.user)
+    if error:
+        return error
+    created = push_interview_areas(request.user, session)
+    return JsonResponse({"created": created})

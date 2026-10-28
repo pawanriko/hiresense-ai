@@ -536,3 +536,165 @@ class InterviewApiTests(TestCase):
         self.client.logout()
         self.assertEqual(
             self.client.get("/api/interview/sessions/").status_code, 401)
+
+
+from applications.models import Application, GapTask
+from interview.models import InterviewSession
+from jdmatch.models import MatchAnalysis
+
+
+def make_application(owner, company="TestCorp", role="Intern",
+                     status="Applied"):
+    return Application.objects.create(
+        owner=owner, company=company, role=role, status=status)
+
+
+class ApplicationsApiTests(TestCase):
+    def test_create_and_counts(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/applications/",
+            {"company": "TestCorp", "role": "Frontend Intern",
+             "status": "Interview", "notes": "Recruiter call done."},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["company"], "TestCorp")
+        self.assertEqual(data["status"], "Interview")
+        counts = self.client.get("/api/applications/").json()["counts"]
+        self.assertEqual(counts["Interview"], 1)
+        self.assertEqual(counts["Applied"], 0)
+
+    def test_create_validation(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        no_role = self.client.post(
+            "/api/applications/",
+            {"company": "TestCorp"},
+            content_type="application/json",
+        )
+        self.assertEqual(no_role.status_code, 400)
+        bad_status = self.client.post(
+            "/api/applications/",
+            {"company": "X", "role": "Y", "status": "Hired"},
+            content_type="application/json",
+        )
+        self.assertEqual(bad_status.status_code, 400)
+        other = make_user("other")
+        jd = make_jd(other)
+        bad_jd = self.client.post(
+            "/api/applications/",
+            {"company": "X", "role": "Y", "jd_id": jd.id},
+            content_type="application/json",
+        )
+        self.assertEqual(bad_jd.status_code, 400)
+
+    def test_edit_delete_and_reorder(self):
+        user = make_user("demo")
+        first = make_application(user, company="Alpha")
+        make_application(user, company="Beta")
+        self.client.force_login(user)
+        # Editing bumps updated_at, moving the row to the top.
+        updated = self.client.put(
+            f"/api/applications/{first.id}/",
+            {"status": "Offer"},
+            content_type="application/json",
+        ).json()
+        self.assertEqual(updated["status"], "Offer")
+        listed = self.client.get("/api/applications/").json()["applications"]
+        self.assertEqual(listed[0]["company"], "Alpha")
+        deleted = self.client.delete(f"/api/applications/{first.id}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(
+            self.client.get(f"/api/applications/{first.id}/").status_code,
+            404)
+
+    def test_applications_ownership(self):
+        user = make_user("demo")
+        other = make_user("other")
+        app = make_application(other)
+        self.client.force_login(user)
+        self.assertEqual(len(
+            self.client.get("/api/applications/").json()["applications"]), 0)
+        self.assertEqual(
+            self.client.get(f"/api/applications/{app.id}/").status_code, 404)
+
+    def test_tasks_create_filter_toggle(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        task = self.client.post(
+            "/api/applications/tasks/",
+            {"title": "Build a React project"},
+            content_type="application/json",
+        ).json()
+        self.assertEqual(task["status"], "todo")
+        done = self.client.put(
+            f"/api/applications/tasks/{task['id']}/",
+            {"status": "done"},
+            content_type="application/json",
+        ).json()
+        self.assertEqual(done["status"], "done")
+        open_list = self.client.get(
+            "/api/applications/tasks/?filter=open").json()
+        self.assertEqual(open_list["tasks"], [])
+        self.assertEqual(open_list["done_count"], 1)
+        done_list = self.client.get(
+            "/api/applications/tasks/?filter=done").json()
+        self.assertEqual(len(done_list["tasks"]), 1)
+        bad = self.client.put(
+            f"/api/applications/tasks/{task['id']}/",
+            {"status": "finished"},
+            content_type="application/json",
+        )
+        self.assertEqual(bad.status_code, 400)
+
+    def test_push_analysis_gaps_skips_duplicates(self):
+        user = make_user("demo")
+        jd = make_jd(user)
+        resume = make_parsed_resume(user)
+        analysis = MatchAnalysis.objects.create(
+            owner=user, resume=resume, jd=jd, match_score=50.0,
+            criteria_results=[],
+            gaps=[{"criterion": "Python", "current_status": "missing",
+                   "suggested_action": "Add a Python project."}])
+        self.client.force_login(user)
+        first = self.client.post(
+            f"/api/applications/push/analysis/{analysis.id}/").json()
+        self.assertEqual(first["created"], 1)
+        tasks = self.client.get("/api/applications/tasks/").json()["tasks"]
+        self.assertEqual(tasks[0]["title"], "Close gap: Python")
+        self.assertEqual(tasks[0]["source_gap"], "Add a Python project.")
+        second = self.client.post(
+            f"/api/applications/push/analysis/{analysis.id}/").json()
+        self.assertEqual(second["created"], 0)
+
+    def test_push_interview_areas_and_in_progress_zero(self):
+        user = make_user("demo")
+        completed = InterviewSession.objects.create(
+            owner=user, track="HR", difficulty="easy",
+            status=InterviewSession.STATUS_COMPLETED,
+            report={"weakest_areas": ["Introduction", "Motivation"],
+                    "topic_scores": [], "weakest_question": None,
+                    "feedback_source": "checklist"},
+            transcript=[])
+        in_progress = InterviewSession.objects.create(
+            owner=user, track="HR", difficulty="easy",
+            transcript=[])
+        self.client.force_login(user)
+        pushed = self.client.post(
+            f"/api/applications/push/interview/{completed.id}/").json()
+        self.assertEqual(pushed["created"], 2)
+        titles = [t["title"] for t in self.client.get(
+            "/api/applications/tasks/").json()["tasks"]]
+        self.assertIn("Practise interview topic: Introduction", titles)
+        none = self.client.post(
+            f"/api/applications/push/interview/{in_progress.id}/").json()
+        self.assertEqual(none["created"], 0)
+
+    def test_applications_anonymous_is_401(self):
+        self.assertEqual(
+            self.client.get("/api/applications/").status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/applications/tasks/").status_code, 401)
