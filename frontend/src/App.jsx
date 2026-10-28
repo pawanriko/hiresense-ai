@@ -5,6 +5,9 @@ import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Resumes from './pages/Resumes.jsx'
 import ResumeDetail from './pages/ResumeDetail.jsx'
+import JdMatch from './pages/JdMatch.jsx'
+import JdDetail from './pages/JdDetail.jsx'
+import AnalysisDetail from './pages/AnalysisDetail.jsx'
 
 // App owns the auth state: on load it asks Django who is signed in.
 // Pages below only render when that question is answered, so a
@@ -24,6 +27,7 @@ function Header({ user, onSignedOut }) {
           <>
             <NavLink to="/">Dashboard</NavLink>
             <NavLink to="/resumes">Resumes</NavLink>
+            <NavLink to="/jd-match">JD Match</NavLink>
             <span className="muted">{user.username}</span>
             <button onClick={signOut}>Sign out</button>
           </>
@@ -68,6 +72,18 @@ export default function App() {
           <Route
             path="/resumes/:id"
             element={user ? <ResumeDetail /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/jd-match"
+            element={user ? <JdMatch /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/jd-match/:id"
+            element={user ? <JdDetail /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/jd-match/analyses/:id"
+            element={user ? <AnalysisDetail /> : <Navigate to="/login" />}
           />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

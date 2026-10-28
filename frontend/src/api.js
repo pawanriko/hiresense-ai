@@ -68,4 +68,16 @@ export const api = {
     formData.append('file', file)
     return requestFormData('/api/resumes/upload/', formData)
   },
+  jds: () => request('/api/jdmatch/jds/'),
+  createJd: (title, company, raw_text) =>
+    request('/api/jdmatch/jds/', { method: 'POST', body: { title, company, raw_text } }),
+  jdDetail: (id) => request(`/api/jdmatch/jds/${id}/`),
+  saveCriteria: (id, criteria) =>
+    request(`/api/jdmatch/jds/${id}/criteria/`, { method: 'PUT', body: { criteria } }),
+  redraftCriteria: (id) =>
+    request(`/api/jdmatch/jds/${id}/redraft/`, { method: 'POST' }),
+  analyses: () => request('/api/jdmatch/analyses/'),
+  runAnalysis: (jd_id, resume_id) =>
+    request('/api/jdmatch/analyses/', { method: 'POST', body: { jd_id, resume_id } }),
+  analysisDetail: (id) => request(`/api/jdmatch/analyses/${id}/`),
 }

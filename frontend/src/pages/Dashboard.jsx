@@ -58,6 +58,7 @@ export default function Dashboard() {
           ))}
         </ul>
       )}
+      <p><Link to="/jd-match">Match a resume to a job →</Link></p>
     </section>
   )
 }
