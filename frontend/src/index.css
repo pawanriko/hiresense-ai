@@ -39,6 +39,8 @@ footer {
 .score { font-size: 2.5rem; font-weight: bold; margin: 0; }
 .muted { color: #666; }
 .error { color: #b3261e; }
+.pass { color: #1a7a1a; font-weight: bold; }
+.fail { color: #b3261e; font-weight: bold; }
 .list { list-style: none; padding: 0; }
 form { display: grid; gap: 1rem; max-width: 480px; }
 label { display: grid; gap: 0.25rem; }

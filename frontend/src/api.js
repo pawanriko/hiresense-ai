@@ -38,10 +38,34 @@ async function request(path, { method = 'GET', body } = {}) {
   return data
 }
 
+async function requestFormData(path, formData) {
+  // Multipart upload: the browser sets Content-Type (with boundary)
+  // itself, so we must NOT set it — only the CSRF header goes on.
+  await ensureCsrf()
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    body: formData,
+    credentials: 'include',
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data.detail || 'Request failed')
+  }
+  return data
+}
+
 export const api = {
   me: () => request('/api/auth/me/'),
   login: (username, password) =>
     request('/api/auth/login/', { method: 'POST', body: { username, password } }),
   logout: () => request('/api/auth/logout/', { method: 'POST' }),
   dashboard: () => request('/api/dashboard/'),
+  resumes: () => request('/api/resumes/'),
+  resumeDetail: (id) => request(`/api/resumes/${id}/`),
+  uploadResume: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return requestFormData('/api/resumes/upload/', formData)
+  },
 }

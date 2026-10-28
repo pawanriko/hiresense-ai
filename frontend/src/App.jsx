@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 're
 import { api } from './api'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import Resumes from './pages/Resumes.jsx'
+import ResumeDetail from './pages/ResumeDetail.jsx'
 
 // App owns the auth state: on load it asks Django who is signed in.
 // Pages below only render when that question is answered, so a
@@ -21,6 +23,7 @@ function Header({ user, onSignedOut }) {
         {user ? (
           <>
             <NavLink to="/">Dashboard</NavLink>
+            <NavLink to="/resumes">Resumes</NavLink>
             <span className="muted">{user.username}</span>
             <button onClick={signOut}>Sign out</button>
           </>
@@ -57,6 +60,14 @@ export default function App() {
           <Route
             path="/"
             element={user ? <Dashboard /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/resumes"
+            element={user ? <Resumes /> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/resumes/:id"
+            element={user ? <ResumeDetail /> : <Navigate to="/login" />}
           />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

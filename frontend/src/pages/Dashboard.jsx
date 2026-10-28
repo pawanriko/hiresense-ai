@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
 
 export default function Dashboard() {
@@ -45,6 +46,7 @@ export default function Dashboard() {
       </div>
 
       <h2>Resumes</h2>
+      <p><Link to="/resumes">Upload a new resume →</Link></p>
       {data.resumes.length === 0 ? (
         <p className="muted">Nothing here yet.</p>
       ) : (
