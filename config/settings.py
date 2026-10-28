@@ -71,6 +71,9 @@ INSTALLED_APPS = [
     'jdmatch',
     'interview',
     'applications',
+    # API: JSON endpoints for the React frontend (frontend/). No new
+    # dependencies — plain JsonResponse views + session auth.
+    'api',
 ]
 
 SITE_ID = 1

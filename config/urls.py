@@ -19,6 +19,7 @@ app's own urls.py, so each app owns its little corner of the site:
     /interview/<id>/     -> interview app (one session: current question or report)
     /applications/       -> applications app (tracker + gap tasks, slice 4)
     /applications/tasks/ -> applications app (gap-task checklist)
+    /api/                -> api app (JSON endpoints for the React frontend)
     /admin/              -> Django's automatic admin site
 """
 
@@ -38,4 +39,5 @@ urlpatterns = [
     path('jd-match/', include('jdmatch.urls')),
     path('interview/', include('interview.urls')),
     path('applications/', include('applications.urls')),
+    path('api/', include('api.urls')),
 ]
