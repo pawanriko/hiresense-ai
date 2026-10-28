@@ -11,6 +11,7 @@ from django.core.files.base import ContentFile
 from django.test import TestCase
 
 from applications.models import Application, GapTask
+from jdmatch.models import JobDescription
 from resumes.models import Resume
 
 User = get_user_model()
@@ -219,3 +220,202 @@ class ResumeApiTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(
             self.client.get("/api/resumes/1/").status_code, 401)
+
+
+JD_TEXT = (
+    "We are hiring a Frontend Intern. You will work with React and "
+    "JavaScript to build user interfaces, and collaborate with the team. "
+    "Experience with Python is a plus. Strong communication skills required."
+)
+
+RESUME_TEXT = (
+    "Pawan Kumar\n"
+    "pawanriko@gmail.com | github.com/pawanriko\n"
+    "Summary\n"
+    "BCA student building AI and web projects.\n"
+    "Skills\n"
+    "Python, Django, JavaScript, React, SQL, Git\n"
+    "Experience\n"
+    "Built HireSense AI with React and Django, used by 200 students, "
+    "improving mock scores by 30%.\n"
+    "Developed REST APIs with Python and Django serving 50 requests "
+    "per minute.\n"
+    "Education\n"
+    "BCA, IITM Janakpuri, 2023 - 2026\n"
+)
+
+
+def make_parsed_resume(owner):
+    """A resume whose extracted text is already filled in, so it is
+    eligible for JD matching (the HTML run form's 'parsed' filter)."""
+    resume = Resume(owner=owner, original_name="resume.pdf",
+                    extracted_text=RESUME_TEXT, ats_score=90)
+    resume.file.save("resume.pdf", ContentFile(b"fake pdf bytes"), save=True)
+    return resume
+
+
+def make_jd(owner, criteria=None):
+    if criteria is None:
+        criteria = [
+            {"name": "React", "category": "skill", "weight": 35,
+             "required": True},
+            {"name": "Python", "category": "skill", "weight": 35,
+             "required": False},
+        ]
+    return JobDescription.objects.create(
+        owner=owner, title="Frontend Intern", company="TestCorp",
+        raw_text=JD_TEXT, criteria=criteria)
+
+
+class JDMatchApiTests(TestCase):
+    def test_create_jd_drafts_criteria(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/jdmatch/jds/",
+            {"title": "Frontend Intern", "company": "TestCorp",
+             "raw_text": JD_TEXT},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data["title"], "Frontend Intern")
+        names = [c["name"] for c in data["criteria"]]
+        # No AI keys on this machine, so the heuristic draft runs: the
+        # JD text mentions React, Python, and communication.
+        self.assertIn("React", names)
+        self.assertIn("Python", names)
+        self.assertIn("Communication", names)
+
+    def test_create_jd_validation(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        short = self.client.post(
+            "/api/jdmatch/jds/",
+            {"title": "Intern", "raw_text": "too short"},
+            content_type="application/json",
+        )
+        self.assertEqual(short.status_code, 400)
+        no_title = self.client.post(
+            "/api/jdmatch/jds/",
+            {"title": "  ", "raw_text": JD_TEXT},
+            content_type="application/json",
+        )
+        self.assertEqual(no_title.status_code, 400)
+
+    def test_criteria_save_and_validation(self):
+        user = make_user("demo")
+        jd = make_jd(user)
+        self.client.force_login(user)
+        response = self.client.put(
+            f"/api/jdmatch/jds/{jd.id}/criteria/",
+            {"criteria": [
+                {"name": "React", "category": "skill", "weight": 50,
+                 "required": True},
+                {"name": "  ", "category": "skill", "weight": 50,
+                 "required": False},
+                {"name": "Django", "category": "skill", "weight": 50,
+                 "required": False},
+            ]},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        # The blank-name row is dropped, like the HTML formset.
+        self.assertEqual(
+            [c["name"] for c in response.json()["criteria"]],
+            ["React", "Django"])
+        bad_category = self.client.put(
+            f"/api/jdmatch/jds/{jd.id}/criteria/",
+            {"criteria": [{"name": "X", "category": "magic", "weight": 10}]},
+            content_type="application/json",
+        )
+        self.assertEqual(bad_category.status_code, 400)
+        no_weight = self.client.put(
+            f"/api/jdmatch/jds/{jd.id}/criteria/",
+            {"criteria": [{"name": "X", "category": "skill"}]},
+            content_type="application/json",
+        )
+        self.assertEqual(no_weight.status_code, 400)
+
+    def test_redraft_and_other_user_404(self):
+        user = make_user("demo")
+        other = make_user("other")
+        jd = make_jd(user, criteria=[])
+        self.client.force_login(user)
+        response = self.client.post(f"/api/jdmatch/jds/{jd.id}/redraft/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(len(response.json()["criteria"]) > 0)
+        self.client.force_login(other)
+        self.assertEqual(
+            self.client.get(f"/api/jdmatch/jds/{jd.id}/").status_code, 404)
+
+    def test_run_analysis_success(self):
+        user = make_user("demo")
+        jd = make_jd(user)
+        resume = make_parsed_resume(user)
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/jdmatch/analyses/",
+            {"jd_id": jd.id, "resume_id": resume.id},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertTrue(0 < data["match_score"] <= 100)
+        react = [r for r in data["criteria_results"]
+                 if r["name"] == "React"][0]
+        self.assertIsNotNone(react["evidence"])
+        self.assertGreaterEqual(react["score"], 70)
+        self.assertEqual(data["jd_title"], "Frontend Intern")
+        self.assertEqual(data["resume_name"], "resume.pdf")
+
+    def test_run_analysis_empty_criteria_400(self):
+        user = make_user("demo")
+        jd = make_jd(user, criteria=[])
+        resume = make_parsed_resume(user)
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/jdmatch/analyses/",
+            {"jd_id": jd.id, "resume_id": resume.id},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_run_analysis_other_resume_404(self):
+        user = make_user("demo")
+        other = make_user("other")
+        jd = make_jd(user)
+        theirs = make_parsed_resume(other)
+        self.client.force_login(user)
+        response = self.client.post(
+            "/api/jdmatch/analyses/",
+            {"jd_id": jd.id, "resume_id": theirs.id},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_analyses_list_and_detail_ownership(self):
+        user = make_user("demo")
+        other = make_user("other")
+        jd = make_jd(user)
+        resume = make_parsed_resume(user)
+        self.client.force_login(user)
+        created = self.client.post(
+            "/api/jdmatch/analyses/",
+            {"jd_id": jd.id, "resume_id": resume.id},
+            content_type="application/json",
+        ).json()
+        data = self.client.get("/api/jdmatch/analyses/").json()
+        self.assertEqual(len(data["analyses"]), 1)
+        self.client.force_login(other)
+        self.assertEqual(len(
+            self.client.get("/api/jdmatch/analyses/").json()["analyses"]), 0)
+        self.assertEqual(
+            self.client.get(
+                f"/api/jdmatch/analyses/{created['id']}/").status_code, 404)
+
+    def test_jdmatch_anonymous_is_401(self):
+        self.assertEqual(
+            self.client.get("/api/jdmatch/jds/").status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/jdmatch/analyses/").status_code, 401)

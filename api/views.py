@@ -25,13 +25,21 @@ from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
 from applications.models import Application, GapTask
+from jdmatch.models import JobDescription, MatchAnalysis
+from resumes.ai_provider import extract_criteria as ai_extract_criteria
+from resumes.ai_provider import is_ai_configured
 from resumes.extract import extract_text
 from resumes.forms import ResumeUploadForm
 from resumes.models import Resume
-from resumes.scoring import compute_ats, segment_sections
+from resumes.scoring import (
+    compute_ats,
+    extract_criteria_heuristic,
+    score_resume,
+    segment_sections,
+)
 
 
 def _unauthenticated():
@@ -124,6 +132,10 @@ def _resume_list_json(resume):
         "original_name": resume.original_name,
         "ats_score": resume.ats_score,
         "created_at": resume.created_at.isoformat(),
+        # Slice C needs this: the JD-match run form only offers resumes
+        # that actually have extracted text ("parsed"). The list page
+        # filters on it client-side instead of a second endpoint.
+        "has_text": bool((resume.extracted_text or "").strip()),
     }
 
 
@@ -195,3 +207,244 @@ def resume_detail(request, pk):
     except Resume.DoesNotExist:
         return JsonResponse({"detail": "Not found."}, status=404)
     return JsonResponse(_resume_detail_json(resume))
+
+
+# ---------------------------------------------------------------------------
+# JD Match (slice C)
+# ---------------------------------------------------------------------------
+# Mirrors the HTML flow in jdmatch/views.py, in three steps:
+#   1. Paste a JD -> criteria are drafted (AI first, else heuristic).
+#   2. Edit the criteria (save / redraft) BEFORE scoring.
+#   3. Run the match against a parsed resume -> a saved analysis.
+# Scores stay deterministic: AI drafts criteria only, never scores.
+
+def _draft_criteria(title, company, raw_text):
+    """Same draft rule as jdmatch/views.py — duplicated here so the api
+    app doesn't import a private helper from another app."""
+    if is_ai_configured():
+        ai_criteria = ai_extract_criteria(title, company, raw_text)
+        if ai_criteria:
+            return ai_criteria
+    return extract_criteria_heuristic(raw_text)
+
+
+_CATEGORIES = {"skill", "tool", "language", "education", "soft"}
+
+
+def _clean_criteria(rows):
+    """Validate a criteria list from JSON. Returns (criteria, error).
+    Mirrors CriterionForm: blank-name rows are dropped, a named row
+    needs an integer weight 0-100, and the category must be valid."""
+    if not isinstance(rows, list):
+        return None, "Criteria must be a list."
+    criteria = []
+    for row in rows:
+        if not isinstance(row, dict):
+            return None, "Each criterion must be an object."
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue  # blank row, dropped like the HTML formset
+        category = row.get("category")
+        if category not in _CATEGORIES:
+            return None, f"Invalid category: {category!r}."
+        weight = row.get("weight")
+        if isinstance(weight, bool) or not isinstance(weight, int):
+            return None, f"Weight is required for criterion {name!r}."
+        if not 0 <= weight <= 100:
+            return None, f"Weight for criterion {name!r} must be 0-100."
+        criteria.append({
+            "name": name,
+            "category": category,
+            "weight": weight,
+            "required": bool(row.get("required", False)),
+        })
+    return criteria, None
+
+
+def _jd_list_json(jd):
+    return {
+        "id": jd.id,
+        "title": jd.title,
+        "company": jd.company,
+        "created_at": jd.created_at.isoformat(),
+    }
+
+
+def _jd_json(jd):
+    data = _jd_list_json(jd)
+    data["raw_text"] = jd.raw_text
+    data["criteria"] = jd.criteria
+    return data
+
+
+def _analysis_list_json(analysis):
+    return {
+        "id": analysis.id,
+        "jd_id": analysis.jd_id,
+        "jd_title": analysis.jd.title,
+        "resume_id": analysis.resume_id,
+        "resume_name": analysis.resume.original_name,
+        "match_score": analysis.match_score,
+        "created_at": analysis.created_at.isoformat(),
+    }
+
+
+def _analysis_json(analysis):
+    data = _analysis_list_json(analysis)
+    data["criteria_results"] = analysis.criteria_results
+    data["gaps"] = analysis.gaps
+    return data
+
+
+def _get_owned(model, pk, user):
+    """Owner-filtered lookup. Returns (object, None) or (None, a 404
+    JsonResponse) — the same 'another user's id is a 404' rule as the
+    HTML pages, but with a JSON body instead of Django's HTML 404."""
+    try:
+        return model.objects.get(pk=pk, owner=user), None
+    except model.DoesNotExist:
+        return None, JsonResponse({"detail": "Not found."}, status=404)
+
+
+def _json_body(request):
+    try:
+        body = json.loads(request.body or "{}")
+    except ValueError:
+        return None, JsonResponse({"detail": "Invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return None, JsonResponse({"detail": "Invalid JSON body"}, status=400)
+    return body, None
+
+
+@require_http_methods(["GET", "POST"])
+def jd_collection(request):
+    """GET: the user's JDs, newest first. POST: paste a JD (title +
+    30+ character text) and get back the JD with drafted criteria."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    if request.method == "GET":
+        jds = JobDescription.objects.filter(owner=request.user)
+        return JsonResponse({"jds": [_jd_list_json(j) for j in jds]})
+    body, error = _json_body(request)
+    if error:
+        return error
+    title = str(body.get("title", "")).strip()
+    raw_text = body.get("raw_text", "")
+    company = str(body.get("company", "") or "").strip()
+    if not title:
+        return JsonResponse({"detail": "A title is required."}, status=400)
+    if len(title) > 255 or len(company) > 255:
+        return JsonResponse(
+            {"detail": "Title or company is too long."}, status=400)
+    if not isinstance(raw_text, str) or len(raw_text.strip()) < 30:
+        return JsonResponse(
+            {"detail": "A job description of at least 30 characters "
+                       "is required."},
+            status=400)
+    jd = JobDescription.objects.create(
+        owner=request.user,
+        title=title,
+        company=company,
+        raw_text=raw_text,
+        criteria=_draft_criteria(title, company, raw_text),
+    )
+    return JsonResponse(_jd_json(jd), status=201)
+
+
+def jd_detail(request, pk):
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    jd, error = _get_owned(JobDescription, pk, request.user)
+    if error:
+        return error
+    return JsonResponse(_jd_json(jd))
+
+
+@require_http_methods(["PUT"])
+def jd_criteria(request, pk):
+    """Replace a JD's criteria with the edited list. The HTML page
+    scores only SAVED criteria, never unsaved edits — same rule here:
+    save first, then run the match."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    jd, error = _get_owned(JobDescription, pk, request.user)
+    if error:
+        return error
+    body, error = _json_body(request)
+    if error:
+        return error
+    criteria, error = _clean_criteria(body.get("criteria"))
+    if error:
+        return JsonResponse({"detail": error}, status=400)
+    jd.criteria = criteria
+    jd.save()
+    return JsonResponse(_jd_json(jd))
+
+
+@require_POST
+def jd_redraft(request, pk):
+    """Fresh draft from the saved JD text (AI when configured, else
+    heuristic). Discards edits, exactly like the HTML redraft button."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    jd, error = _get_owned(JobDescription, pk, request.user)
+    if error:
+        return error
+    jd.criteria = _draft_criteria(jd.title, jd.company, jd.raw_text)
+    jd.save()
+    return JsonResponse(_jd_json(jd))
+
+
+@require_http_methods(["GET", "POST"])
+def analysis_collection(request):
+    """GET: the user's saved analyses, newest first. POST: run a match
+    — {jd_id, resume_id} — against the JD's SAVED criteria, and save
+    the analysis. The resume must be the user's own and parsed
+    (non-empty extracted text), and the JD must have criteria."""
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    if request.method == "GET":
+        analyses = MatchAnalysis.objects.filter(owner=request.user)
+        return JsonResponse({
+            "analyses": [_analysis_list_json(a) for a in analyses],
+        })
+    body, error = _json_body(request)
+    if error:
+        return error
+    jd, error = _get_owned(JobDescription, body.get("jd_id"),
+                           request.user)
+    if error:
+        return error
+    resume, error = _get_owned(Resume, body.get("resume_id"),
+                               request.user)
+    if error:
+        return error
+    if not (resume.extracted_text or "").strip():
+        return JsonResponse(
+            {"detail": "That resume has no extracted text yet."},
+            status=400)
+    if not jd.criteria:
+        return JsonResponse(
+            {"detail": "This JD has no criteria yet. Add criteria first, "
+                       "then run the match."},
+            status=400)
+    sections = segment_sections(resume.extracted_text)
+    result = score_resume(sections, jd.criteria)
+    analysis = MatchAnalysis.objects.create(
+        owner=request.user,
+        resume=resume,
+        jd=jd,
+        match_score=result["match_score"],
+        criteria_results=result["criteria_results"],
+        gaps=result["gaps"],
+    )
+    return JsonResponse(_analysis_json(analysis), status=201)
+
+
+def analysis_detail(request, pk):
+    if not request.user.is_authenticated:
+        return _unauthenticated()
+    analysis, error = _get_owned(MatchAnalysis, pk, request.user)
+    if error:
+        return error
+    return JsonResponse(_analysis_json(analysis))
