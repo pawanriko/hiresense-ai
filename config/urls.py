@@ -4,7 +4,7 @@ HOW IT WORKS: Django reads this list top to bottom and hands each request to
 the first pattern that matches. ``include()`` hands a whole URL prefix to an
 app's own urls.py, so each app owns its little corner of the site:
 
-    /                    -> dashboard app (home page)
+    /                    -> React SPA (production) — see SPA_ROUTES below
     /accounts/login/     -> accounts app (Django's built-in login view)
     /accounts/logout/    -> accounts app (logout)
     /accounts/google/login/ (+ callback) -> accounts app guards, which
@@ -26,18 +26,49 @@ app's own urls.py, so each app owns its little corner of the site:
 from django.contrib import admin
 from django.urls import include, path
 
+from . import views as config_views
+
+# REACT SPA ROUTES (production): when Django serves the built React app
+# (Render), these exact paths return the SPA's index.html so React
+# Router takes over. They sit BEFORE the HTML apps' includes on purpose:
+#   * '' must beat dashboard's '' — the live homepage IS the React app.
+#   * 'resumes' (no slash) must beat the HTML resumes app, or Django's
+#     APPEND_SLASH would bounce it to the HTML page instead.
+# The HTML pages stay reachable at their trailing-slash URLs
+# (/resumes/, /jd-match/, ...) — only the no-slash SPA paths are taken.
+SPA_ROUTES = [
+    '',
+    'login',
+    'resumes',
+    'resumes/<int:pk>',
+    'jd-match',
+    'jd-match/<int:pk>',
+    'jd-match/analyses/<int:pk>',
+    'interview',
+    'interview/<int:pk>',
+    'applications',
+    'applications/tasks',
+    'applications/<int:pk>',
+]
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('dashboard.urls')),
+    path('api/', include('api.urls')),
     # OUR accounts URLs FIRST: they own /accounts/login/ and /logout/,
     # and the Google guard paths. allauth's URLs come second and supply
     # everything else (provider login/callback names, socialaccount
     # helpers). See accounts/urls.py for why this order matters.
     path('accounts/', include('accounts.urls')),
     path('accounts/', include('allauth.urls')),
+    # Root-level files from the built frontend (favicon, icons).
+    path('favicon.svg', config_views.site_file, {'name': 'favicon.svg'}),
+    path('icons.svg', config_views.site_file, {'name': 'icons.svg'}),
+    # The React app itself (production; in dev Vite serves these).
+    *[path(route, config_views.spa_index) for route in SPA_ROUTES],
+    # HTML pages: the dev interface, still live at trailing-slash URLs.
+    path('', include('dashboard.urls')),
     path('resumes/', include('resumes.urls')),
     path('jd-match/', include('jdmatch.urls')),
     path('interview/', include('interview.urls')),
     path('applications/', include('applications.urls')),
-    path('api/', include('api.urls')),
 ]

@@ -8,6 +8,8 @@ media/
 .env
 .env.*
 !.env.example
+# Production static collection (collectstatic output, rebuilt on deploy).
+staticfiles/
 # React frontend (frontend/): installed packages and the production
 # build output are generated, never committed.
 frontend/node_modules/

@@ -17,3 +17,8 @@ python-dotenv==1.2.4
 # the wheel, so there is nothing else to install — this matters on
 # Windows, where building psycopg from source needs a C toolchain.
 psycopg[binary]==3.2.10
+# Production hosting (Render): gunicorn serves Django, WhiteNoise serves
+# the built React files + collected static files. Only needed in
+# production; harmless locally (runserver still works as before).
+gunicorn==23.0.0
+whitenoise==6.9.0

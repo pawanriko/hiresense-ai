@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,13 +32,46 @@ load_dotenv(BASE_DIR / ".env")
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-6kh2(50v62kww9!oky8dqcl_i_=^4#2%8ij$gd_ys9y-kp^61u'
+# SECRET KEY + DEBUG + HOSTS: dev vs production, by environment.
+#   * Local dev (no env vars set): the insecure dev key below, DEBUG on,
+#     localhost allowed — exactly how the app has always run, so nothing
+#     about the local setup changes.
+#   * Production (Render): SECRET_KEY comes from Render's generated env
+#     var, DEBUG is False, and the host comes from Render's own
+#     RENDER_EXTERNAL_HOSTNAME. Running with DEBUG=False and the dev key
+#     is refused loudly at startup instead of silently serving an
+#     insecure app.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-6kh2(50v62kww9!oky8dqcl_i_=^4#2%8ij$gd_ys9y-kp^61u',
+)
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+if not DEBUG and SECRET_KEY.startswith('django-insecure-'):
+    raise ImproperlyConfigured(
+        'SECRET_KEY must be set when DEBUG is False (production).'
+    )
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
+    if host.strip()
+]
+# RENDER_EXTERNAL_HOSTNAME: Render sets this automatically on every web
+# service to its <name>.onrender.com address. Trust it for both host
+# checks and CSRF (the React app posts to /api on the same origin, so
+# the CSRF cookie's trusted origin must be the live https address).
+RENDER_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
+if RENDER_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_HOSTNAME)
+    CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_HOSTNAME}']
+if DEBUG:
+    ALLOWED_HOSTS += ['127.0.0.1', 'localhost']
+if not DEBUG:
+    # Behind Render's TLS-terminating proxy: cookies only over https,
+    # and trust the proxy's forwarded-proto header.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # Application definition
@@ -80,6 +115,11 @@ SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WHITENOISE: serves the built React files + collected static files
+    # in production (Render), straight from Django with no extra server.
+    # It must sit right after SecurityMiddleware. Locally it does
+    # nothing noticeable — dev still uses the Vite server on :5173.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -227,6 +267,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# PRODUCTION STATIC: collectstatic gathers everything into STATIC_ROOT
+# and WhiteNoise serves it at /static/. STATICFILES_DIRS points at the
+# Vite build output, so the built React app (index.html, assets/*,
+# favicon) is collected too — but only when the build exists (a fresh
+# clone before `npm run build` simply has no dist/ yet, and collectstatic
+# then just finds nothing extra).
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+if (BASE_DIR / 'frontend' / 'dist').is_dir():
+    STATICFILES_DIRS = [BASE_DIR / 'frontend' / 'dist']
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
