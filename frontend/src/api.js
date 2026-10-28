@@ -86,4 +86,21 @@ export const api = {
   interviewDetail: (id) => request(`/api/interview/sessions/${id}/`),
   answerQuestion: (id, answer) =>
     request(`/api/interview/sessions/${id}/answer/`, { method: 'POST', body: { answer } }),
+  applications: () => request('/api/applications/'),
+  createApplication: (fields) =>
+    request('/api/applications/', { method: 'POST', body: fields }),
+  applicationDetail: (id) => request(`/api/applications/${id}/`),
+  updateApplication: (id, fields) =>
+    request(`/api/applications/${id}/`, { method: 'PUT', body: fields }),
+  deleteApplication: (id) =>
+    request(`/api/applications/${id}/`, { method: 'DELETE' }),
+  tasks: (filter) => request(`/api/applications/tasks/?filter=${filter}`),
+  createTask: (title, source_gap) =>
+    request('/api/applications/tasks/', { method: 'POST', body: { title, source_gap } }),
+  updateTask: (id, fields) =>
+    request(`/api/applications/tasks/${id}/`, { method: 'PUT', body: fields }),
+  pushAnalysisGaps: (id) =>
+    request(`/api/applications/push/analysis/${id}/`, { method: 'POST' }),
+  pushInterviewAreas: (id) =>
+    request(`/api/applications/push/interview/${id}/`, { method: 'POST' }),
 }

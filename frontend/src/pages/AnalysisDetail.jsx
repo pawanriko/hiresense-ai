@@ -6,12 +6,27 @@ export default function AnalysisDetail() {
   const { id } = useParams()
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [pushing, setPushing] = useState(false)
 
   useEffect(() => {
     api.analysisDetail(id)
       .then(setAnalysis)
       .catch((err) => setError(err.message))
   }, [id])
+
+  async function handlePush() {
+    setNotice('')
+    setPushing(true)
+    try {
+      const result = await api.pushAnalysisGaps(id)
+      setNotice(`${result.created} task(s) added to your checklist.`)
+    } catch (err) {
+      setNotice(err.message)
+    } finally {
+      setPushing(false)
+    }
+  }
 
   if (error) return <p className="error">{error}</p>
   if (!analysis) return <p>Loading…</p>
@@ -50,6 +65,12 @@ export default function AnalysisDetail() {
           ))}
         </ul>
       )}
+
+      <button onClick={handlePush} disabled={pushing}>
+        {pushing ? 'Pushing…' : 'Push gaps to tasks'}
+      </button>
+      {notice && <p>{notice}</p>}
+      <p><Link to="/applications/tasks">Go to tasks →</Link></p>
     </section>
   )
 }

@@ -18,6 +18,8 @@ export default function InterviewSession() {
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [pushing, setPushing] = useState(false)
 
   useEffect(() => {
     api.interviewDetail(id)
@@ -37,6 +39,19 @@ export default function InterviewSession() {
       setError(err.message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handlePush() {
+    setNotice('')
+    setPushing(true)
+    try {
+      const result = await api.pushInterviewAreas(id)
+      setNotice(`${result.created} task(s) added to your checklist.`)
+    } catch (err) {
+      setNotice(err.message)
+    } finally {
+      setPushing(false)
     }
   }
 
@@ -92,6 +107,12 @@ export default function InterviewSession() {
               </div>
             </>
           )}
+
+          <button onClick={handlePush} disabled={pushing}>
+            {pushing ? 'Pushing…' : 'Push weakest areas to tasks'}
+          </button>
+          {notice && <p>{notice}</p>}
+          <p><Link to="/applications/tasks">Go to tasks →</Link></p>
         </>
       ) : (
         <>

@@ -60,6 +60,7 @@ export default function Dashboard() {
       )}
       <p><Link to="/jd-match">Match a resume to a job →</Link></p>
       <p><Link to="/interview">Practise an interview →</Link></p>
+      <p><Link to="/applications">Applications →</Link> · <Link to="/applications/tasks">Tasks →</Link></p>
     </section>
   )
 }
