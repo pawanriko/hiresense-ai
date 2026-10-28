@@ -436,10 +436,11 @@ Postgres database.
    Render reads `render.yaml` and creates both resources.
 3. Wait for the first build + deploy, then open the service's
    `.onrender.com` URL.
-4. In the service's Shell tab, run once: `python manage.py seed_demo`
-   — this creates the demo/demo1234 login on the live database.
-   (Or sign in with Google, once you've created an OAuth client with
-   the live callback URL.)
+4. The build runs `python manage.py seed_demo` automatically (after
+   migrate), so the demo/demo1234 login exists on the live database.
+   (Render's Shell tab needs a paid plan, so on the free tier the build
+   is the way to seed. Or sign in with Google, once you've created an
+   OAuth client with the live callback URL.)
 5. Optional env vars in the dashboard: `GROQ_API_KEY`, `GEMINI_API_KEY`
    (AI features; everything works without them).
 
