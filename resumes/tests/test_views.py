@@ -127,9 +127,12 @@ class UploadFlowTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_dashboard_lists_my_resumes(self):
+        # The dashboard is the React page now; it reads /api/dashboard/.
         Resume.objects.create(owner=self.user, original_name="a.docx",
                               extracted_text="x", ats_score=70, breakdown={})
         self.client.force_login(self.user)
-        response = self.client.get(reverse("dashboard:home"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "a.docx")
+        data = self.client.get("/api/dashboard/").json()
+        self.assertEqual(
+            [resume["original_name"] for resume in data["resumes"]],
+            ["a.docx"],
+        )

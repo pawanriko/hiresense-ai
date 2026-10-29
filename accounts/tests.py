@@ -77,10 +77,14 @@ class DemoLoginTests(TestCase):
         )
         self.assertRedirects(response, reverse("dashboard:home"))
 
-    def test_anonymous_dashboard_redirect_lands_on_working_login_page(self):
-        response = self.client.get(reverse("dashboard:home"))
+    def test_anonymous_redirect_lands_on_working_login_page(self):
+        # The React SPA owns / now (see SPA_ROUTES in config/urls.py), so
+        # the old "dashboard home redirects to login" flow is checked
+        # against an HTML page instead: anonymous visitors still end up
+        # on a working login page that shows the demo account.
+        response = self.client.get(reverse("resumes:upload"))
         self.assertRedirects(
-            response, reverse("accounts:login") + "?next=" + reverse("dashboard:home")
+            response, reverse("accounts:login") + "?next=" + reverse("resumes:upload")
         )
         login_page = self.client.get(response.url)
         self.assertEqual(login_page.status_code, 200)

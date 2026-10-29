@@ -291,12 +291,13 @@ class ApplicationsTestCase(TestCase):
                                status="done")
         self._make_app(company="A", status="Applied")
         self._make_app(company="B", status="Offer")
-        response = self.client.get(reverse("dashboard:home"))
+        # The dashboard is the React page now; it reads /api/dashboard/.
+        data = self.client.get("/api/dashboard/").json()
         # Open means anything not done (todo + doing), like the original.
-        self.assertEqual(response.context["open_tasks"], 2)
-        self.assertEqual(response.context["done_tasks"], 1)
+        self.assertEqual(data["open_tasks"], 2)
+        self.assertEqual(data["done_tasks"], 1)
         self.assertEqual(
-            response.context["app_counts"],
+            data["app_counts"],
             {"Applied": 1, "Interview": 0, "Offer": 1, "Rejected": 0},
         )
 
