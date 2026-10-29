@@ -17,7 +17,7 @@ import Tasks from './pages/Tasks.jsx'
 // App owns the auth state: on load it asks Django who is signed in.
 // Pages below only render when that question is answered, so a
 // logged-out visitor never flashes the dashboard for a frame.
-function Header({ user, onSignedOut }) {
+function Header({ user, onSignedOut, theme, onToggleTheme }) {
   const navigate = useNavigate()
   async function signOut() {
     await api.logout()
@@ -42,6 +42,9 @@ function Header({ user, onSignedOut }) {
         ) : (
           <NavLink to="/login">Sign in</NavLink>
         )}
+        <button type="button" onClick={onToggleTheme} aria-label="Toggle dark / light mode">
+          {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+        </button>
       </nav>
     </header>
   )
@@ -50,6 +53,36 @@ function Header({ user, onSignedOut }) {
 export default function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  // Theme: index.html sets data-theme before first paint (from
+  // localStorage); React adopts it and keeps the two in sync.
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || 'dark')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try {
+      localStorage.setItem('hiresense-theme', theme)
+    } catch {
+      // Private mode etc.: theme just won't persist.
+    }
+  }, [theme])
+
+  // Cursor-tracking glow: feed the pointer position into CSS variables;
+  // the .cursor-glow disc in index.css follows with a soft lag.
+  useEffect(() => {
+    let raf = 0
+    function onMove(event) {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        document.documentElement.style.setProperty('--mx', `${event.clientX}px`)
+        document.documentElement.style.setProperty('--my', `${event.clientY}px`)
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      cancelAnimationFrame(raf)
+    }
+  }, [])
 
   useEffect(() => {
     api.me()
@@ -62,7 +95,13 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Header user={user} onSignedOut={() => setUser(null)} />
+      <div className="cursor-glow" aria-hidden="true" />
+      <Header
+        user={user}
+        onSignedOut={() => setUser(null)}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+      />
       <main>
         <Routes>
           <Route
@@ -119,6 +158,12 @@ export default function App() {
       <footer>
         <p>HireSense AI — candidate-side interview prep.</p>
         <p>Scoring is deterministic: AI never computes a score.</p>
+        <p>
+          Built by Pawan —{' '}
+          <a href="https://github.com/pawanriko" target="_blank" rel="noreferrer">GitHub</a>
+          {' · '}
+          <a href="https://www.linkedin.com/in/pawanriko" target="_blank" rel="noreferrer">LinkedIn</a>
+        </p>
       </footer>
     </BrowserRouter>
   )

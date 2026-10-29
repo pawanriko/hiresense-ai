@@ -12,6 +12,16 @@
       rel="stylesheet"
     />
     <title>HireSense AI</title>
+    <script>
+      // Apply the saved theme before first paint, so a light-mode user
+      // never flashes the dark theme. React keeps it in sync afterwards.
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('hiresense-theme') || 'dark'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
