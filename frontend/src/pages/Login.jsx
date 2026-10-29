@@ -26,7 +26,7 @@ export default function Login({ onSignedIn }) {
 
   return (
     <section className="narrow">
-      <h1>Welcome back 👋</h1>
+      <h1>Welcome back</h1>
       <p className="tagline">Your sidekick for resumes, JD matches &amp; mock interviews.</p>
       {error && <p className="error">{error}</p>}
       <form onSubmit={handleSubmit}>
