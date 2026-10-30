@@ -59,6 +59,43 @@ class AuthApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_register_creates_hashed_user_and_signs_in(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "pawan", "password": "Str0ng!Pass99"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {"username": "pawan"})
+        user = User.objects.get(username="pawan")
+        # Stored hashed, never as plaintext, and verifiable.
+        self.assertNotEqual(user.password, "Str0ng!Pass99")
+        self.assertTrue(user.password.startswith("pbkdf2_"))
+        self.assertTrue(user.check_password("Str0ng!Pass99"))
+        # Registering also signs the new user in.
+        me = self.client.get("/api/auth/me/")
+        self.assertEqual(
+            me.json(), {"authenticated": True, "username": "pawan"})
+
+    def test_register_rejects_duplicate_username(self):
+        make_user("demo")
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "Demo", "password": "Str0ng!Pass99"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(User.objects.filter(username__iexact="demo").count(), 1)
+
+    def test_register_rejects_weak_password(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {"username": "pawan", "password": "12345678"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(username="pawan").exists())
+
     def test_logout_ends_session(self):
         make_user("demo")
         self.client.post(

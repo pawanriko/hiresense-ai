@@ -22,6 +22,9 @@ dependencies, which keeps Windows setup as one pip install.
 import json
 
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -94,6 +97,43 @@ def login_view(request):
             {"detail": "Invalid username or password"}, status=400)
     login(request, user)
     return JsonResponse({"username": user.username})
+
+
+@require_POST
+def register_view(request):
+    """Create an account with a username + password JSON body, then
+    sign the new user in (same session login_view creates).
+
+    Passwords are stored by Django's auth system in the database as
+    PBKDF2 hashes — never in plaintext. The password runs through the
+    project's AUTH_PASSWORD_VALIDATORS (length, common-password and
+    similarity checks) before the account is created.
+    """
+    try:
+        body = json.loads(request.body or "{}")
+    except ValueError:
+        return JsonResponse({"detail": "Invalid JSON body"}, status=400)
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    email = (body.get("email") or "").strip()
+    if not username:
+        return JsonResponse({"detail": "Username is required"}, status=400)
+    if User.objects.filter(username__iexact=username).exists():
+        return JsonResponse(
+            {"detail": "That username is already taken"}, status=400
+        )
+    try:
+        validate_password(password, user=User(username=username, email=email))
+    except ValidationError as exc:
+        return JsonResponse({"detail": " ".join(exc.messages)}, status=400)
+    User.objects.create_user(
+        username=username, password=password, email=email
+    )
+    # Re-authenticate so login() gets a user with its auth backend set
+    # (a freshly created user object does not carry one yet).
+    user = authenticate(request, username=username, password=password)
+    login(request, user)
+    return JsonResponse({"username": user.username}, status=201)
 
 
 @require_POST

@@ -8,6 +8,7 @@ urlpatterns = [
     path("auth/csrf/", views.csrf, name="api-csrf"),
     path("auth/me/", views.me, name="api-me"),
     path("auth/login/", views.login_view, name="api-login"),
+    path("auth/register/", views.register_view, name="api-register"),
     path("auth/logout/", views.logout_view, name="api-logout"),
     path("dashboard/", views.dashboard, name="api-dashboard"),
     path("resumes/", views.resume_list, name="api-resume-list"),
