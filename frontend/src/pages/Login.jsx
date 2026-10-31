@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 
 export default function Login({ onSignedIn }) {
@@ -53,6 +53,9 @@ export default function Login({ onSignedIn }) {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+      <p className="muted">
+        New here? <Link to="/signup">Create an account</Link>
+      </p>
       <p className="muted">Demo account: demo / demo1234</p>
     </section>
   )

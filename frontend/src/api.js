@@ -59,6 +59,11 @@ export const api = {
   me: () => request('/api/auth/me/'),
   login: (username, password) =>
     request('/api/auth/login/', { method: 'POST', body: { username, password } }),
+  register: (username, password, email) =>
+    request('/api/auth/register/', {
+      method: 'POST',
+      body: { username, password, email },
+    }),
   logout: () => request('/api/auth/logout/', { method: 'POST' }),
   dashboard: () => request('/api/dashboard/'),
   resumes: () => request('/api/resumes/'),

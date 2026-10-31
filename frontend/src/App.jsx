@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { api } from './api'
 import Login from './pages/Login.jsx'
+import Signup from './pages/Signup.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Resumes from './pages/Resumes.jsx'
 import ResumeDetail from './pages/ResumeDetail.jsx'
@@ -107,6 +108,10 @@ export default function App() {
           <Route
             path="/login"
             element={user ? <Navigate to="/" /> : <Login onSignedIn={setUser} />}
+          />
+          <Route
+            path="/signup"
+            element={user ? <Navigate to="/" /> : <Signup onSignedIn={setUser} />}
           />
           <Route
             path="/"
