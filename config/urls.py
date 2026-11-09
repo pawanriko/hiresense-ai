@@ -39,6 +39,7 @@ from . import views as config_views
 SPA_ROUTES = [
     '',
     'login',
+    'signup',
     'resumes',
     'resumes/<int:pk>',
     'jd-match',
