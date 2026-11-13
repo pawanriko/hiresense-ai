@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import StatusPill from '../components/StatusPill.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 
 const STATUSES = ['Applied', 'Interview', 'Offer', 'Rejected']
 
@@ -119,17 +122,20 @@ export default function Applications() {
 
       <h2>Tracker — recently updated first</h2>
       {applications === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={3} />
       ) : applications.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="No applications yet"
+          hint="Add your first application above and track it from Applied to Offer."
+        />
       ) : (
         <ul className="list">
           {applications.map((app) => (
             <li key={app.id} className="card">
               <Link to={`/applications/${app.id}`}>
                 {app.role} at {app.company}
-              </Link>
-              <span className="muted"> — {app.status}</span>
+              </Link>{' '}
+              <StatusPill status={app.status} />
               {app.jd_title && <span className="muted"> · JD: {app.jd_title}</span>}
               {' '}
               <select

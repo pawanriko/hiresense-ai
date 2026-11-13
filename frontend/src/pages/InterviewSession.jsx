@@ -1,14 +1,28 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
+import ScoreRing from '../components/ScoreRing.jsx'
+import ScoreBar from '../components/ScoreBar.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import { useToast } from '../components/toast-context.js'
+
+const DIMENSIONS = [
+  ['relevance', 'Relevance'],
+  ['depth', 'Depth'],
+  ['structure', 'Structure'],
+  ['confidence', 'Confidence'],
+  ['conciseness', 'Conciseness'],
+]
 
 function ScoreList({ scores }) {
   if (!scores) return null
   return (
-    <p className="muted">
-      Relevance {scores.relevance} · Depth {scores.depth} · Structure {scores.structure} ·{' '}
-      Confidence {scores.confidence} · Conciseness {scores.conciseness}
-    </p>
+    <div>
+      {DIMENSIONS.map(([key, label]) => (
+        <ScoreBar key={key} label={label} value={scores[key]} />
+      ))}
+    </div>
   )
 }
 
@@ -18,8 +32,8 @@ export default function InterviewSession() {
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState('')
   const [pushing, setPushing] = useState(false)
+  const toast = useToast()
 
   useEffect(() => {
     api.interviewDetail(id)
@@ -43,20 +57,19 @@ export default function InterviewSession() {
   }
 
   async function handlePush() {
-    setNotice('')
     setPushing(true)
     try {
       const result = await api.pushInterviewAreas(id)
-      setNotice(`${result.created} task(s) added to your checklist.`)
+      toast.push(`${result.created} task(s) added to your checklist.`)
     } catch (err) {
-      setNotice(err.message)
+      toast.push(err.message, 'error')
     } finally {
       setPushing(false)
     }
   }
 
   if (error && !session) return <p className="error">{error}</p>
-  if (!session) return <p>Loading…</p>
+  if (!session) return <SkeletonList count={3} />
 
   const answered = session.transcript.filter((item) => item.answer !== null)
   const lastAnswered = answered[answered.length - 1]
@@ -76,17 +89,17 @@ export default function InterviewSession() {
 
       {completed ? (
         <>
-          <p className="score">{session.overall_score}<span className="muted"> / 100 overall</span></p>
+          <div className="score-hero">
+            <ScoreRing value={session.overall_score} label="Overall" />
+          </div>
           <p className="muted">Feedback source: {session.report.feedback_source}</p>
 
           <h2>Scores by topic</h2>
-          <ul className="list">
+          <div className="card">
             {session.report.topic_scores.map((t) => (
-              <li key={t.topic} className="card">
-                {t.topic} — {t.score}/100
-              </li>
+              <ScoreBar key={t.topic} label={t.topic} value={t.score} />
             ))}
-          </ul>
+          </div>
 
           <h2>Weakest areas</h2>
           {session.report.weakest_areas.length === 0 ? (
@@ -111,7 +124,6 @@ export default function InterviewSession() {
           <button onClick={handlePush} disabled={pushing}>
             {pushing ? 'Pushing…' : 'Push weakest areas to tasks'}
           </button>
-          {notice && <p>{notice}</p>}
           <p><Link to="/applications/tasks">Go to tasks →</Link></p>
         </>
       ) : (
@@ -150,7 +162,10 @@ export default function InterviewSession() {
 
       <h2>Transcript</h2>
       {answered.length === 0 ? (
-        <p className="muted">No answers yet.</p>
+        <EmptyState
+          title="No answers yet"
+          hint="Your answers and feedback will appear here as you go."
+        />
       ) : (
         answered.map((item, index) => (
           <div className="card" key={index}>

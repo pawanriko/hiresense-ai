@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import StatusPill from '../components/StatusPill.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 
 const TRACKS = ['HR', 'Technical', 'DSA', 'Frontend']
 const DIFFICULTIES = ['easy', 'medium', 'hard']
@@ -82,20 +85,24 @@ export default function Interview() {
 
       <h2>Past sessions</h2>
       {sessions === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={3} />
       ) : sessions.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="No sessions yet"
+          hint="Start your first mock interview above — five questions, one at a time."
+        />
       ) : (
         <ul className="list">
           {sessions.map((session) => (
             <li key={session.id} className="card">
               <Link to={`/interview/${session.id}`}>
                 {session.track} · {session.difficulty}
-              </Link>
+              </Link>{' '}
+              <StatusPill status={session.status === 'completed' ? 'completed' : 'in progress'} />
               <span className="muted">
-                {' '}— {session.status === 'completed'
-                  ? `completed, ${session.overall_score}/100`
-                  : `in progress, ${session.answered_count}/${session.total} answered`}
+                {' '}{session.status === 'completed'
+                  ? `${session.overall_score}/100`
+                  : `${session.answered_count}/${session.total} answered`}
               </span>
             </li>
           ))}

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
+import ScoreRing from '../components/ScoreRing.jsx'
+import ScoreBar from '../components/ScoreBar.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
 
 export default function ResumeDetail() {
   const { id } = useParams()
@@ -14,17 +17,20 @@ export default function ResumeDetail() {
   }, [id])
 
   if (error) return <p className="error">{error}</p>
-  if (!resume) return <p>Loading…</p>
+  if (!resume) return <SkeletonList count={3} />
 
   return (
     <section>
       <p><Link to="/resumes">← All resumes</Link></p>
       <h1>{resume.original_name}</h1>
-      <p className="score">{resume.ats_score}<span className="muted"> / 100 ATS</span></p>
+      <div className="score-hero">
+        <ScoreRing value={resume.ats_score} label="ATS" />
+      </div>
 
       {resume.breakdown.categories.map((category) => (
         <div className="card" key={category.name}>
-          <h2>{category.name} — {category.score}/100 (weight {category.weight})</h2>
+          <ScoreBar label={category.name} value={category.score} />
+          <p className="muted">Weight {category.weight}</p>
           <ul className="list">
             {category.checks.map((check) => (
               <li key={check.name}>

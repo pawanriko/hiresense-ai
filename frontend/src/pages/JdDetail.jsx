@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import SkeletonList from '../components/Skeleton.jsx'
+import { useToast } from '../components/toast-context.js'
 
 const CATEGORIES = ['skill', 'tool', 'language', 'education', 'soft']
 
@@ -11,9 +13,9 @@ export default function JdDetail() {
   const [resumes, setResumes] = useState([])
   const [selectedResume, setSelectedResume] = useState('')
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
+  const toast = useToast()
 
   useEffect(() => {
     api.jdDetail(id)
@@ -37,13 +39,12 @@ export default function JdDetail() {
 
   async function handleSave() {
     setError('')
-    setNotice('')
     setBusy(true)
     try {
       const saved = await api.saveCriteria(id, criteria)
       setJd(saved)
       setCriteria(saved.criteria)
-      setNotice('Criteria saved.')
+      toast.push('Criteria saved.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -53,13 +54,12 @@ export default function JdDetail() {
 
   async function handleRedraft() {
     setError('')
-    setNotice('')
     setBusy(true)
     try {
       const drafted = await api.redraftCriteria(id)
       setJd(drafted)
       setCriteria(drafted.criteria)
-      setNotice('Fresh draft loaded — your edits were discarded.')
+      toast.push('Fresh draft loaded — your edits were discarded.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -70,7 +70,6 @@ export default function JdDetail() {
   async function handleRun() {
     if (!selectedResume) return
     setError('')
-    setNotice('')
     setBusy(true)
     try {
       const analysis = await api.runAnalysis(id, Number(selectedResume))
@@ -83,7 +82,7 @@ export default function JdDetail() {
   }
 
   if (error && !jd) return <p className="error">{error}</p>
-  if (!jd) return <p>Loading…</p>
+  if (!jd) return <SkeletonList count={3} />
 
   return (
     <section>
@@ -154,7 +153,6 @@ export default function JdDetail() {
         Redraft
       </button>
       <p className="muted">Redraft replaces the criteria with a fresh draft and discards your edits.</p>
-      {notice && <p>{notice}</p>}
       {error && <p className="error">{error}</p>}
 
       <h2>Run the match</h2>

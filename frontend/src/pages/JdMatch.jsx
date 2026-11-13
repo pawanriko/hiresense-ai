@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 
 export default function JdMatch() {
   const [jds, setJds] = useState(null)
@@ -66,9 +68,12 @@ export default function JdMatch() {
 
       <h2>Saved job descriptions</h2>
       {jds === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={2} />
       ) : jds.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="No job descriptions yet"
+          hint="Paste a job description above and draft its criteria."
+        />
       ) : (
         <ul className="list">
           {jds.map((jd) => (
@@ -82,9 +87,12 @@ export default function JdMatch() {
 
       <h2>Past analyses</h2>
       {analyses === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={2} />
       ) : analyses.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="No analyses yet"
+          hint="Run a saved job description against a resume to see a match score."
+        />
       ) : (
         <ul className="list">
           {analyses.map((analysis) => (

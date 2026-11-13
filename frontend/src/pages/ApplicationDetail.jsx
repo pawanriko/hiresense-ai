@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import StatusPill from '../components/StatusPill.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import { useToast } from '../components/toast-context.js'
 
 const STATUSES = ['Applied', 'Interview', 'Offer', 'Rejected']
 
@@ -14,9 +17,9 @@ export default function ApplicationDetail() {
   const [notes, setNotes] = useState('')
   const [jdId, setJdId] = useState('')
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
+  const toast = useToast()
 
   useEffect(() => {
     api.applicationDetail(id)
@@ -35,7 +38,6 @@ export default function ApplicationDetail() {
   async function handleSave(event) {
     event.preventDefault()
     setError('')
-    setNotice('')
     setBusy(true)
     try {
       const saved = await api.updateApplication(id, {
@@ -46,7 +48,7 @@ export default function ApplicationDetail() {
         jd_id: jdId ? Number(jdId) : null,
       })
       setApp(saved)
-      setNotice('Saved.')
+      toast.push('Saved.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -66,12 +68,13 @@ export default function ApplicationDetail() {
   }
 
   if (error && !app) return <p className="error">{error}</p>
-  if (!app) return <p>Loading…</p>
+  if (!app) return <SkeletonList count={2} />
 
   return (
     <section>
       <p><Link to="/applications">← Applications</Link></p>
       <h1>{app.role} at {app.company}</h1>
+      <p><StatusPill status={app.status} /></p>
 
       <form onSubmit={handleSave}>
         <label>
@@ -110,7 +113,6 @@ export default function ApplicationDetail() {
           Delete
         </button>
       </form>
-      {notice && <p>{notice}</p>}
       {error && <p className="error">{error}</p>}
     </section>
   )

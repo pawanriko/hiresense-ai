@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import StatusPill from '../components/StatusPill.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 
 const TASK_STATUSES = ['todo', 'doing', 'done']
 const FILTERS = ['all', 'open', 'done']
@@ -93,9 +96,12 @@ export default function Tasks() {
       </p>
 
       {tasks === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={3} />
       ) : tasks.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="No tasks here"
+          hint="Push gaps from a JD analysis or interview report, or add a task above."
+        />
       ) : (
         <ul className="list">
           {tasks.map((task) => (
@@ -107,7 +113,8 @@ export default function Tasks() {
                   onChange={() => toggle(task)}
                 />{' '}
                 <strong>{task.title}</strong>
-              </label>
+              </label>{' '}
+              <StatusPill status={task.status} />
               {task.source_gap && <p className="muted">{task.source_gap}</p>}
               <select
                 value={task.status}

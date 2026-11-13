@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
+import { useToast } from '../components/toast-context.js'
 
 export default function Resumes() {
   const [resumes, setResumes] = useState(null)
   const [file, setFile] = useState(null)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [uploading, setUploading] = useState(false)
+  const toast = useToast()
 
   function load() {
     api.resumes()
@@ -21,11 +24,10 @@ export default function Resumes() {
     event.preventDefault()
     if (!file) return
     setError('')
-    setNotice('')
     setUploading(true)
     try {
       const created = await api.uploadResume(file)
-      setNotice(`Uploaded ${created.original_name} — ATS ${created.ats_score}/100`)
+      toast.push(`Uploaded ${created.original_name} — ATS ${created.ats_score}/100`)
       setFile(null)
       event.target.reset()
       load()
@@ -54,14 +56,16 @@ export default function Resumes() {
           {uploading ? 'Scoring…' : 'Upload and score'}
         </button>
       </form>
-      {notice && <p>{notice}</p>}
       {error && <p className="error">{error}</p>}
 
       <h2>Your resumes</h2>
       {resumes === null ? (
-        <p>Loading…</p>
+        <SkeletonList count={3} />
       ) : resumes.length === 0 ? (
-        <p className="muted">Nothing here yet — upload your first resume above.</p>
+        <EmptyState
+          title="No resumes yet"
+          hint="Upload your first resume above — PDF or DOCX."
+        />
       ) : (
         <ul className="list">
           {resumes.map((resume) => (

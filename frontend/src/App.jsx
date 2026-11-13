@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import SkeletonList from './components/Skeleton.jsx'
+import { ToastProvider } from './components/Toasts.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -20,15 +22,55 @@ import Tasks from './pages/Tasks.jsx'
 // logged-out visitor never flashes the dashboard for a frame.
 function Header({ user, onSignedOut, theme, onToggleTheme }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  // Mobile menu: closed by default. The toggle button only exists
+  // below 760px (see .nav-toggle in index.css); on desktop the nav
+  // is always visible and this state has no visual effect.
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // Any navigation closes the menu, so a tap never leaves the
+  // panel open over the new page. Adjusted during render (React's
+  // "adjust state when props change" pattern), not in an effect.
+  const [prevPathname, setPrevPathname] = useState(location.pathname)
+  if (location.pathname !== prevPathname) {
+    setPrevPathname(location.pathname)
+    setMenuOpen(false)
+  }
+
+  // Escape closes the menu too (keyboard / screen-reader users).
+  useEffect(() => {
+    if (!menuOpen) return undefined
+    function onKey(event) {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
+
   async function signOut() {
     await api.logout()
     onSignedOut()
     navigate('/login')
   }
   return (
-    <header>
+    <header className={menuOpen ? 'nav-open' : ''}>
       <strong>HireSense AI</strong>
-      <nav>
+      <div className="header-actions">
+        <button type="button" onClick={onToggleTheme} aria-label="Toggle dark / light mode">
+          {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+        </button>
+        <button
+          type="button"
+          className="nav-toggle"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-expanded={menuOpen}
+          aria-controls="main-nav"
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+        >
+          {menuOpen ? '✕ Close' : '☰ Menu'}
+        </button>
+      </div>
+      <nav id="main-nav">
         {user ? (
           <>
             <NavLink to="/">Dashboard</NavLink>
@@ -43,9 +85,6 @@ function Header({ user, onSignedOut, theme, onToggleTheme }) {
         ) : (
           <NavLink to="/login">Sign in</NavLink>
         )}
-        <button type="button" onClick={onToggleTheme} aria-label="Toggle dark / light mode">
-          {theme === 'dark' ? '☀ Light' : '☾ Dark'}
-        </button>
       </nav>
     </header>
   )
@@ -92,10 +131,11 @@ export default function App() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <main><p>Loading…</p></main>
+  if (loading) return <main><SkeletonList count={3} /></main>
 
   return (
     <BrowserRouter>
+      <ToastProvider>
       <div className="cursor-glow" aria-hidden="true" />
       <Header
         user={user}
@@ -170,6 +210,7 @@ export default function App() {
           <a href="https://www.linkedin.com/in/pawanriko" target="_blank" rel="noreferrer">LinkedIn</a>
         </p>
       </footer>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

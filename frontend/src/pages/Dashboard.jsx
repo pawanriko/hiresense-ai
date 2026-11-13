@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import ScoreRing from '../components/ScoreRing.jsx'
+import SkeletonList from '../components/Skeleton.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
@@ -13,19 +16,27 @@ export default function Dashboard() {
   }, [])
 
   if (error) return <p className="error">{error}</p>
-  if (!data) return <p>Loading…</p>
+  if (!data) return <SkeletonList count={3} />
 
   return (
     <section>
       <h1>Dashboard</h1>
 
       {data.latest ? (
-        <div className="card">
-          <p className="muted">Latest resume: {data.latest.original_name}</p>
-          <p className="score">{data.latest.ats_score}<span className="muted"> / 100 ATS</span></p>
+        <div className="card score-hero">
+          <ScoreRing value={data.latest.ats_score} label="ATS" />
+          <div>
+            <p className="muted">Latest resume</p>
+            <p><Link to={`/resumes/${data.latest.id}`}>{data.latest.original_name}</Link></p>
+          </div>
         </div>
       ) : (
-        <div className="card"><p>No resumes yet.</p></div>
+        <EmptyState
+          title="No resumes yet"
+          hint="Upload your first resume and get an ATS score in seconds."
+          actionTo="/resumes"
+          actionLabel="Upload a resume"
+        />
       )}
 
       <div className="row">
@@ -48,7 +59,12 @@ export default function Dashboard() {
       <h2>Resumes</h2>
       <p><Link to="/resumes">Upload a new resume →</Link></p>
       {data.resumes.length === 0 ? (
-        <p className="muted">Nothing here yet.</p>
+        <EmptyState
+          title="Nothing here yet"
+          hint="Your scored resumes will land here."
+          actionTo="/resumes"
+          actionLabel="Upload a resume"
+        />
       ) : (
         <ul className="list">
           {data.resumes.map((resume) => (
