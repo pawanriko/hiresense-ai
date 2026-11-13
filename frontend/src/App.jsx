@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import { INSFORGE_MODE, initInsforgeSession } from './insforge'
 import SkeletonList from './components/Skeleton.jsx'
 import { ToastProvider } from './components/Toasts.jsx'
 import Login from './pages/Login.jsx'
@@ -125,10 +126,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    api.me()
-      .then((data) => setUser(data.authenticated ? { username: data.username } : null))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+    // In InsForge mode the SDK handshake runs first: it finishes an
+    // OAuth callback exchange (if this load is one) and restores the
+    // session from the refresh cookie — only then can me() see the
+    // Bearer token. In session mode there is nothing to restore.
+    async function boot() {
+      if (INSFORGE_MODE) await initInsforgeSession()
+      try {
+        const data = await api.me()
+        setUser(data.authenticated ? { username: data.username } : null)
+      } catch {
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    boot()
   }, [])
 
   if (loading) return <main><SkeletonList count={3} /></main>

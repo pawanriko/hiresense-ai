@@ -1,11 +1,26 @@
 // Tiny API client — the only place that knows how Django auth works.
 //
-// HOW IT WORKS: Django uses session cookies + a CSRF token. Before the
-// first POST we GET /api/auth/csrf/, which sets the `csrftoken` cookie
-// (Django's CSRF cookie is readable by JS by design). Every later
-// non-GET request sends that cookie's value back as the X-CSRFToken
-// header, and `credentials: 'include'` makes the browser send the
-// session cookie along. No tokens are stored anywhere in JS.
+// TWO MODES (see insforge.js for the switch):
+//  * Session mode (default): Django session cookies + a CSRF token.
+//    Before the first POST we GET /api/auth/csrf/, which sets the
+//    `csrftoken` cookie (Django's CSRF cookie is readable by JS by
+//    design). Every later non-GET request sends that cookie's value
+//    back as the X-CSRFToken header, and `credentials: 'include'`
+//    makes the browser send the session cookie along. No tokens are
+//    stored anywhere in JS.
+//  * InsForge mode: every request ALSO carries the InsForge access
+//    token as Authorization: Bearer. The CSRF header is still sent
+//    (Django's CSRF check runs before auth) until the Phase 5
+//    cleanup exempts verified Bearer calls. On a 401 the client
+//    refreshes the token once and retries once — access tokens live
+//    15 minutes, so expiry mid-session is normal, not an error.
+import {
+  INSFORGE_MODE,
+  getAccessToken,
+  insforgeSignOut,
+  refreshInsforgeSession,
+} from './insforge'
+
 function getCookie(name) {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
   return match ? decodeURIComponent(match[2]) : ''
@@ -19,8 +34,16 @@ export function ensureCsrf() {
   return csrfReady
 }
 
-async function request(path, { method = 'GET', body } = {}) {
-  const headers = { 'Content-Type': 'application/json' }
+function bearerHeaders(headers) {
+  if (INSFORGE_MODE) {
+    const token = getAccessToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
+}
+
+async function request(path, { method = 'GET', body, _retried = false } = {}) {
+  const headers = bearerHeaders({ 'Content-Type': 'application/json' })
   if (method !== 'GET') {
     await ensureCsrf()
     headers['X-CSRFToken'] = getCookie('csrftoken')
@@ -31,6 +54,12 @@ async function request(path, { method = 'GET', body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
     credentials: 'include',
   })
+  if (response.status === 401 && INSFORGE_MODE && !_retried) {
+    const refreshed = await refreshInsforgeSession()
+    if (refreshed) {
+      return request(path, { method, body, _retried: true })
+    }
+  }
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(data.detail || 'Request failed')
@@ -42,9 +71,10 @@ async function requestFormData(path, formData) {
   // Multipart upload: the browser sets Content-Type (with boundary)
   // itself, so we must NOT set it — only the CSRF header goes on.
   await ensureCsrf()
+  const headers = bearerHeaders({ 'X-CSRFToken': getCookie('csrftoken') })
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    headers,
     body: formData,
     credentials: 'include',
   })
@@ -57,6 +87,8 @@ async function requestFormData(path, formData) {
 
 export const api = {
   me: () => request('/api/auth/me/'),
+  // Session-mode only: in InsForge mode the Login/Signup pages call
+  // the SDK directly (see insforge.js) and never touch these.
   login: (username, password) =>
     request('/api/auth/login/', { method: 'POST', body: { username, password } }),
   register: (username, password, email) =>
@@ -64,7 +96,10 @@ export const api = {
       method: 'POST',
       body: { username, password, email },
     }),
-  logout: () => request('/api/auth/logout/', { method: 'POST' }),
+  logout: () => {
+    if (INSFORGE_MODE) return insforgeSignOut()
+    return request('/api/auth/logout/', { method: 'POST' })
+  },
   dashboard: () => request('/api/dashboard/'),
   resumes: () => request('/api/resumes/'),
   resumeDetail: (id) => request(`/api/resumes/${id}/`),

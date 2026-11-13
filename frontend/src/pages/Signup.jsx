@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { INSFORGE_MODE, insforgeSignUp } from '../insforge'
 
-// Create an account with a username + password. The server stores the
-// password hashed (Django auth) and signs the new user in straight
-// away, so a successful signup lands on the dashboard.
+// Create an account. In InsForge mode the account lives in InsForge
+// (email + password, verified by InsForge) and the first me() call
+// creates the matching Django user; in session mode the server
+// stores the password hashed (Django auth) and signs the new user in
+// straight away. Either way a successful signup lands on the
+// dashboard.
 export default function Signup({ onSignedIn }) {
-  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -23,8 +27,15 @@ export default function Signup({ onSignedIn }) {
     }
     setBusy(true)
     try {
-      const data = await api.register(username, password, email)
-      onSignedIn({ username: data.username })
+      if (INSFORGE_MODE) {
+        await insforgeSignUp(email, password, name)
+        const me = await api.me()
+        if (!me.authenticated) throw new Error('Sign-up did not stick — try signing in')
+        onSignedIn({ username: me.username })
+      } else {
+        const data = await api.register(name, password, email)
+        onSignedIn({ username: data.username })
+      }
       navigate('/')
     } catch (err) {
       setError(err.message)
@@ -42,21 +53,22 @@ export default function Signup({ onSignedIn }) {
       {error && <p className="error">{error}</p>}
       <form onSubmit={handleSubmit}>
         <label>
-          Username
+          {INSFORGE_MODE ? 'Name (optional)' : 'Username'}
           <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete={INSFORGE_MODE ? 'nickname' : 'username'}
+            required={!INSFORGE_MODE}
           />
         </label>
         <label>
-          Email (optional)
+          {INSFORGE_MODE ? 'Email' : 'Email (optional)'}
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
+            required={INSFORGE_MODE}
           />
         </label>
         <label>

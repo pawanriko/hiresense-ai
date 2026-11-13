@@ -57,6 +57,7 @@ import jwt
 import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 
 from .models import InsforgeIdentity
@@ -139,11 +140,14 @@ def verify_token(token):
     try:
         # No `aud` claim exists on InsForge tokens (spike-proven), so
         # audience verification is off; `exp` + `sub` are required.
+        # `leeway` tolerates the ~1-2s clock skew between InsForge's
+        # servers and this one (see INSFORGE_JWT_LEEWAY in settings).
         return jwt.decode(
             token,
             key,
             algorithms=["RS256"],
             options={"verify_aud": False, "require": ["exp", "sub"]},
+            leeway=settings.INSFORGE_JWT_LEEWAY,
         )
     except jwt.PyJWTError as exc:
         raise InsforgeAuthError("Token verification failed") from exc
@@ -174,30 +178,48 @@ def resolve_user(claims):
     sub = claims["sub"]
     email = (claims.get("email") or "").strip()
     user_model = get_user_model()
-    try:
-        identity = InsforgeIdentity.objects.select_related("user").get(sub=sub)
-    except InsforgeIdentity.DoesNotExist:
-        identity = None
-    if identity is not None:
-        user = identity.user
-        if email and user.email != email:
-            user.email = email
-            user.save(update_fields=["email"])
+    # RACE-SAFE creation, up to 3 attempts: two requests carrying
+    # the same fresh token (a double-mounted app, or me() +
+    # dashboard() fired together) can both pass the lookup below.
+    # Creation runs in one transaction; a unique-constraint loss
+    # means a concurrent request won the race (or took the
+    # username) — loop back, re-look-up, and either return the
+    # winner's row or retry with a fresh username.
+    for _attempt in range(3):
+        try:
+            identity = InsforgeIdentity.objects.select_related("user").get(
+                sub=sub
+            )
+        except InsforgeIdentity.DoesNotExist:
+            identity = None
+        if identity is not None:
+            user = identity.user
+            if email and user.email != email:
+                user.email = email
+                user.save(update_fields=["email"])
+            return user
+        if email and user_model.objects.filter(email__iexact=email).exists():
+            raise InsforgeEmailCollision(
+                "An account with this email already exists and is not "
+                "linked to InsForge yet."
+            )
+        try:
+            with transaction.atomic():
+                user = user_model.objects.create_user(
+                    username=_unique_username(email), email=email
+                )
+                # create_user with no password already sets an
+                # unusable one; state it explicitly so the intent
+                # survives a future reader's skim.
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                InsforgeIdentity.objects.create(
+                    user=user, sub=sub, email=email
+                )
+        except IntegrityError:
+            continue
         return user
-    if email and user_model.objects.filter(email__iexact=email).exists():
-        raise InsforgeEmailCollision(
-            "An account with this email already exists and is not "
-            "linked to InsForge yet."
-        )
-    user = user_model.objects.create_user(
-        username=_unique_username(email), email=email
-    )
-    # create_user with no password already sets an unusable one; state
-    # it explicitly so the intent survives a future reader's skim.
-    user.set_unusable_password()
-    user.save(update_fields=["password"])
-    InsforgeIdentity.objects.create(user=user, sub=sub, email=email)
-    return user
+    raise InsforgeAuthError("Could not provision a user for this token")
 
 
 class InsforgeAuthMiddleware:

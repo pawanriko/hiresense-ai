@@ -378,6 +378,13 @@ INSFORGE_BASE_URL = os.environ.get('INSFORGE_BASE_URL', '').rstrip('/')
 # key id always triggers one immediate refetch (rotation), so this
 # only bounds steady-state traffic, not freshness after rotation.
 INSFORGE_JWKS_CACHE_TTL = int(os.environ.get('INSFORGE_JWKS_CACHE_TTL', '3600'))
+# Clock-skew tolerance (seconds) for token time checks. InsForge's
+# servers run ~1-2s ahead of this VM, so a freshly minted token can
+# look "issued in the future" to PyJWT's iat check and be rejected
+# for its first seconds of life — exactly the window a login/refresh
+# lands in. 60s is the usual tolerance; it only ever extends the
+# accepted window, never the token's real 15-minute lifetime.
+INSFORGE_JWT_LEEWAY = int(os.environ.get('INSFORGE_JWT_LEEWAY', '60'))
 
 SOCIALACCOUNT_PROVIDERS = {}
 if GOOGLE_OAUTH_CONFIGURED:

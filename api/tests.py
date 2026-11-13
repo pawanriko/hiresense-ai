@@ -16,7 +16,9 @@ from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 
 from applications.models import Application, GapTask
+from api.insforge_auth import resolve_user
 from api.models import InsforgeIdentity
+from django.db.models.query import QuerySet
 from jdmatch.models import JobDescription
 from resumes.models import Resume
 
@@ -765,11 +767,12 @@ _INSFORGE_ON = override_settings(
 
 
 def _mint_token(sub="insforge-user-1", email="riko@example.com",
-                key=_TEST_PRIVATE_KEY, kid="test-kid-1", exp_offset=900):
+                key=_TEST_PRIVATE_KEY, kid="test-kid-1", exp_offset=900,
+                iat_offset=0):
     now = int(time.time())
     return jwt.encode(
         {"sub": sub, "email": email, "role": "authenticated",
-         "iat": now, "exp": now + exp_offset},
+         "iat": now + iat_offset, "exp": now + iat_offset + exp_offset},
         key, algorithm="RS256", headers={"kid": kid},
     )
 
@@ -808,7 +811,8 @@ class InsforgeAuthTests(TestCase):
         self.assertEqual(InsforgeIdentity.objects.count(), 1)
 
     def test_expired_token_is_anonymous(self):
-        token = _mint_token(exp_offset=-10)
+        # Expired well beyond the 60s clock-skew leeway: still rejected.
+        token = _mint_token(exp_offset=-120)
         me = self.client.get("/api/auth/me/", **self._bearer(token))
         self.assertEqual(me.json(), {"authenticated": False})
         dashboard = self.client.get(
@@ -826,6 +830,16 @@ class InsforgeAuthTests(TestCase):
         response = self.client.get(
             "/api/dashboard/", **self._bearer(token))
         self.assertEqual(response.status_code, 401)
+
+    def test_token_from_clock_ahead_server_is_accepted(self):
+        # InsForge's servers run ~1-2s ahead of this VM: a token
+        # minted "30 seconds in the future" must still verify (the
+        # leeway), or every fresh login/refresh would flap.
+        token = _mint_token(iat_offset=30)
+        response = self.client.get(
+            "/api/auth/me/", **self._bearer(token))
+        self.assertEqual(response.json(), {
+            "authenticated": True, "username": "riko"})
 
     def test_garbage_token_is_anonymous(self):
         response = self.client.get(
@@ -848,6 +862,33 @@ class InsforgeAuthTests(TestCase):
             "/api/auth/me/", **self._bearer(_mint_token()))
         self.assertEqual(response.json(), {
             "authenticated": True, "username": "riko_1"})
+
+    def test_race_on_first_request_returns_winners_row(self):
+        # Simulate the race: the identity row already exists, but the
+        # first lookup misses (a concurrent request created it a
+        # millisecond ago). Creation then hits the unique constraint;
+        # resolve_user must return the winner's user, roll back its
+        # own half-created user, and sync the email — not 500.
+        user = User.objects.create_user(
+            username="riko", email="old@example.com", password="pw123456")
+        InsforgeIdentity.objects.create(
+            user=user, sub="insforge-user-1", email="old@example.com")
+        real_get = QuerySet.get
+        state = {"calls": 0}
+
+        def flaky_get(qs_self, *args, **kwargs):
+            state["calls"] += 1
+            if state["calls"] == 1 and qs_self.model is InsforgeIdentity:
+                raise InsforgeIdentity.DoesNotExist
+            return real_get(qs_self, *args, **kwargs)
+
+        with mock.patch.object(QuerySet, "get", flaky_get):
+            resolved = resolve_user(
+                {"sub": "insforge-user-1", "email": "riko@example.com"})
+        self.assertEqual(resolved, user)
+        self.assertEqual(User.objects.count(), 1)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "riko@example.com")
 
     def test_session_still_works_with_flag_on(self):
         user = make_user("demo")
