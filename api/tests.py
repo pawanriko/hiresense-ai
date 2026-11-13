@@ -6,13 +6,16 @@ than the CSRF handshake — the browser flow covers that (see
 frontend/src/api.js, which fetches /api/auth/csrf/ first).
 """
 
+import os
 import time
+from io import StringIO
 from unittest import mock
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
+from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 
 from applications.models import Application, GapTask
@@ -912,3 +915,94 @@ class InsforgeFlagOffTests(TestCase):
         response = self.client.get(
             "/api/dashboard/", HTTP_AUTHORIZATION="Bearer whatever")
         self.assertEqual(response.status_code, 401)
+
+
+# --- link_insforge_users (Phase 3) ---
+
+
+class LinkInsforgeUsersTests(TestCase):
+    def _run(self, *args, env_map=None):
+        out, err = StringIO(), StringIO()
+        env = {"INSFORGE_LINK_MAP": env_map} if env_map is not None else {}
+        with mock.patch.dict(os.environ, env, clear=False):
+            call_command("link_insforge_users", *args, stdout=out, stderr=err)
+        return out.getvalue(), err.getvalue()
+
+    def test_report_lists_users_and_link_state(self):
+        user = make_user("demo")
+        user.email = "demo@hiresense.ai"
+        user.save()
+        InsforgeIdentity.objects.create(
+            user=user, sub="sub-demo", email="demo@hiresense.ai")
+        make_user("plain")
+        out, _ = self._run("--report")
+        self.assertIn("demo <demo@hiresense.ai> -> sub-demo", out)
+        self.assertIn("plain <-> -> UNLINKED", out)
+        self.assertIn("2 user(s), 1 linked, 1 unlinked.", out)
+
+    def test_apply_links_by_email_case_insensitive_and_idempotent(self):
+        user = make_user("demo")
+        user.email = "demo@hiresense.ai"
+        user.save()
+        mapping = '{"DEMO@hiresense.ai": "sub-demo"}'
+        out, _ = self._run("--apply", "--map", mapping)
+        self.assertIn("linked to sub-demo", out)
+        identity = InsforgeIdentity.objects.get(user=user)
+        self.assertEqual(identity.sub, "sub-demo")
+        out2, _ = self._run("--apply", "--map", mapping)
+        self.assertIn("already linked", out2)
+        self.assertEqual(InsforgeIdentity.objects.count(), 1)
+
+    def test_apply_reads_mapping_from_env_var(self):
+        user = make_user("demo")
+        user.email = "demo@hiresense.ai"
+        user.save()
+        self._run("--apply", env_map='{"demo@hiresense.ai": "sub-demo"}')
+        self.assertTrue(InsforgeIdentity.objects.filter(
+            user=user, sub="sub-demo").exists())
+
+    def test_apply_is_all_or_nothing(self):
+        user = make_user("demo")
+        user.email = "demo@hiresense.ai"
+        user.save()
+        mapping = ('{"demo@hiresense.ai": "sub-demo", '
+                   '"ghost@example.com": "sub-ghost"}')
+        with self.assertRaises(CommandError):
+            self._run("--apply", "--map", mapping)
+        # The valid pair was NOT applied either.
+        self.assertEqual(InsforgeIdentity.objects.count(), 0)
+
+    def test_apply_refuses_user_linked_to_another_sub(self):
+        user = make_user("demo")
+        user.email = "demo@hiresense.ai"
+        user.save()
+        InsforgeIdentity.objects.create(
+            user=user, sub="sub-old", email="demo@hiresense.ai")
+        with self.assertRaises(CommandError):
+            self._run("--apply", "--map",
+                      '{"demo@hiresense.ai": "sub-new"}')
+        self.assertEqual(
+            InsforgeIdentity.objects.get(user=user).sub, "sub-old")
+
+    def test_apply_refuses_sub_linked_to_another_user(self):
+        user1 = make_user("one")
+        user1.email = "one@example.com"
+        user1.save()
+        InsforgeIdentity.objects.create(
+            user=user1, sub="sub-shared", email="one@example.com")
+        user2 = make_user("two")
+        user2.email = "two@example.com"
+        user2.save()
+        with self.assertRaises(CommandError):
+            self._run("--apply", "--map",
+                      '{"two@example.com": "sub-shared"}')
+        self.assertFalse(
+            InsforgeIdentity.objects.filter(user=user2).exists())
+
+    def test_apply_with_no_mapping_is_a_noop(self):
+        out, _ = self._run("--apply")
+        self.assertIn("nothing to link", out)
+
+    def test_apply_rejects_invalid_json(self):
+        with self.assertRaises(CommandError):
+            self._run("--apply", "--map", "{not json")
