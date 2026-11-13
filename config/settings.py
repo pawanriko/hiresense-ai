@@ -124,6 +124,12 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # INSFORGE JWT AUTH (Phase 1, dual-auth): runs AFTER
+    # AuthenticationMiddleware on purpose — a session user wins, and
+    # only session-anonymous /api/ requests with an Authorization:
+    # Bearer header get verified against InsForge (see
+    # api/insforge_auth.py). Inert unless INSFORGE_AUTH_ENABLED.
+    'api.insforge_auth.InsforgeAuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # ALLAUTH MIDDLEWARE: required by django-allauth (it does very little
@@ -349,6 +355,29 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
 GEMINI_CONFIGURED = bool(GEMINI_API_KEY)
 AI_PROVIDER = os.environ.get('AI_PROVIDER', '')
+
+# --- InsForge JWT auth (Phase 1: dual-auth, flag-gated) ---
+# Same two-state pattern as the AI providers:
+#   * INSFORGE_AUTH_ENABLED unset/false (the default): the InsForge
+#     middleware does nothing and the API behaves exactly as before
+#     (Django session auth only). Bearer headers are ignored.
+#   * Set to "true" (with INSFORGE_BASE_URL): /api/ requests may ALSO
+#     authenticate with an InsForge access token (Authorization:
+#     Bearer). Sessions keep working alongside — the cutover to
+#     Bearer-only happens in Phase 4, by the same flag.
+# INSFORGE_BASE_URL is the project's API base (the oss_host, e.g.
+# https://<appkey>.us-east.insforge.app). Django derives the JWKS URL
+# from it; no secret is needed to VERIFY tokens (RS256 public keys).
+# NEVER put the anon key, API key, or JWT secret in Django settings —
+# verification needs none of them.
+INSFORGE_AUTH_ENABLED = (
+    os.environ.get('INSFORGE_AUTH_ENABLED', 'false').lower() == 'true'
+)
+INSFORGE_BASE_URL = os.environ.get('INSFORGE_BASE_URL', '').rstrip('/')
+# Seconds a fetched JWKS document stays cached in memory. An unknown
+# key id always triggers one immediate refetch (rotation), so this
+# only bounds steady-state traffic, not freshness after rotation.
+INSFORGE_JWKS_CACHE_TTL = int(os.environ.get('INSFORGE_JWKS_CACHE_TTL', '3600'))
 
 SOCIALACCOUNT_PROVIDERS = {}
 if GOOGLE_OAUTH_CONFIGURED:

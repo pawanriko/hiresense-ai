@@ -1,6 +1,6 @@
 """JSON API views for the React frontend.
 
-AUTH MODEL — session auth, no tokens, no new dependencies:
+AUTH MODEL — session auth, plus InsForge JWT auth when enabled:
   * The React dev server (Vite, :5173) proxies /api/* to Django (:8000),
     so from the browser's point of view every API call is same-origin.
     That means no CORS setup and no cookie gymnastics: the session
@@ -9,9 +9,15 @@ AUTH MODEL — session auth, no tokens, no new dependencies:
     GET /api/auth/csrf/ (which sets the csrftoken cookie), reads that
     cookie in JS, and sends it back as the X-CSRFToken header.
     Django's CsrfViewMiddleware checks it exactly like a form post.
+    (Bearer-authenticated calls send the CSRF header too, until the
+    Phase 5 cleanup — see api/insforge_auth.py.)
   * @login_required would redirect anonymous API calls to the HTML
     login page, which React cannot use — so these views check
     request.user.is_authenticated themselves and answer 401 JSON.
+  * When INSFORGE_AUTH_ENABLED is true, the InsforgeAuthMiddleware
+    (see api/insforge_auth.py) may ALSO set request.user from a
+    verified InsForge Bearer token. Sessions keep working alongside
+    (dual-auth); the views below never know which one applied.
 
 WHY NOT DJANGO REST FRAMEWORK: these endpoints are thin wrappers
 around queries the HTML views already make (see dashboard/views.py).

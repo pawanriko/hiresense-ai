@@ -6,11 +6,17 @@ than the CSRF handshake — the browser flow covers that (see
 frontend/src/api.js, which fetches /api/auth/csrf/ first).
 """
 
+import time
+from unittest import mock
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from applications.models import Application, GapTask
+from api.models import InsforgeIdentity
 from jdmatch.models import JobDescription
 from resumes.models import Resume
 
@@ -735,3 +741,133 @@ class ApplicationsApiTests(TestCase):
             self.client.get("/api/applications/").status_code, 401)
         self.assertEqual(
             self.client.get("/api/applications/tasks/").status_code, 401)
+
+
+# --- InsForge JWT auth (Phase 1) ---
+# These tests mint REAL RS256 tokens with a throwaway keypair generated
+# here (never the project's keys) and stub only the JWKS fetch — the
+# signature check, expiry check, kid lookup, and user resolution all
+# run for real. The JWKS document shape matches what the Phase 0 spike
+# read off the live project: one RSA key with a `kid`.
+
+_TEST_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_TEST_OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_TEST_JWK = jwt.algorithms.RSAAlgorithm.to_jwk(
+    _TEST_PRIVATE_KEY.public_key(), as_dict=True
+)
+_TEST_JWK.update({"kid": "test-kid-1", "alg": "RS256", "use": "sig"})
+_TEST_JWKS = [_TEST_JWK]
+
+_INSFORGE_ON = override_settings(
+    INSFORGE_AUTH_ENABLED=True,
+    INSFORGE_BASE_URL="https://test.insforge.app",
+)
+
+
+def _mint_token(sub="insforge-user-1", email="riko@example.com",
+                key=_TEST_PRIVATE_KEY, kid="test-kid-1", exp_offset=900):
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": sub, "email": email, "role": "authenticated",
+         "iat": now, "exp": now + exp_offset},
+        key, algorithm="RS256", headers={"kid": kid},
+    )
+
+
+@_INSFORGE_ON
+class InsforgeAuthTests(TestCase):
+    def setUp(self):
+        # Stub the JWKS fetch (network) for every test; the crypto and
+        # the user resolution still run for real. Started here instead
+        # of a class decorator so no mock argument leaks into tests.
+        patcher = mock.patch(
+            "api.insforge_auth._fetch_jwks", return_value=_TEST_JWKS)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _bearer(self, token):
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def test_bearer_token_creates_user_and_authenticates(self):
+        response = self.client.get(
+            "/api/auth/me/", **self._bearer(_mint_token()))
+        self.assertEqual(response.json(), {
+            "authenticated": True, "username": "riko"})
+        user = User.objects.get(username="riko")
+        self.assertEqual(user.email, "riko@example.com")
+        # InsForge owns the credential: no usable Django password.
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(InsforgeIdentity.objects.filter(
+            user=user, sub="insforge-user-1").exists())
+
+    def test_second_request_reuses_same_user(self):
+        token = _mint_token()
+        self.client.get("/api/auth/me/", **self._bearer(token))
+        self.client.get("/api/auth/me/", **self._bearer(token))
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(InsforgeIdentity.objects.count(), 1)
+
+    def test_expired_token_is_anonymous(self):
+        token = _mint_token(exp_offset=-10)
+        me = self.client.get("/api/auth/me/", **self._bearer(token))
+        self.assertEqual(me.json(), {"authenticated": False})
+        dashboard = self.client.get(
+            "/api/dashboard/", **self._bearer(token))
+        self.assertEqual(dashboard.status_code, 401)
+
+    def test_wrong_signature_is_anonymous(self):
+        token = _mint_token(key=_TEST_OTHER_KEY)
+        response = self.client.get(
+            "/api/dashboard/", **self._bearer(token))
+        self.assertEqual(response.status_code, 401)
+
+    def test_unknown_kid_is_anonymous(self):
+        token = _mint_token(kid="no-such-kid")
+        response = self.client.get(
+            "/api/dashboard/", **self._bearer(token))
+        self.assertEqual(response.status_code, 401)
+
+    def test_garbage_token_is_anonymous(self):
+        response = self.client.get(
+            "/api/dashboard/", **self._bearer("not-a-jwt"))
+        self.assertEqual(response.status_code, 401)
+
+    def test_email_collision_returns_409_without_creating(self):
+        User.objects.create_user(
+            username="old", email="riko@example.com", password="pw123456")
+        response = self.client.get(
+            "/api/auth/me/", **self._bearer(_mint_token()))
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(InsforgeIdentity.objects.count(), 0)
+
+    def test_username_uniquified_when_local_part_taken(self):
+        User.objects.create_user(
+            username="riko", email="other@example.com", password="pw123456")
+        response = self.client.get(
+            "/api/auth/me/", **self._bearer(_mint_token()))
+        self.assertEqual(response.json(), {
+            "authenticated": True, "username": "riko_1"})
+
+    def test_session_still_works_with_flag_on(self):
+        user = make_user("demo")
+        self.client.force_login(user)
+        response = self.client.get("/api/dashboard/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_bearer_token_reaches_owned_data(self):
+        token = _mint_token()
+        self.client.get("/api/auth/me/", **self._bearer(token))
+        user = User.objects.get(username="riko")
+        make_resume(user)
+        response = self.client.get("/api/resumes/", **self._bearer(token))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["resumes"]), 1)
+
+
+class InsforgeFlagOffTests(TestCase):
+    @override_settings(INSFORGE_AUTH_ENABLED=False)
+    def test_bearer_ignored_with_flag_off(self):
+        response = self.client.get(
+            "/api/dashboard/", HTTP_AUTHORIZATION="Bearer whatever")
+        self.assertEqual(response.status_code, 401)
