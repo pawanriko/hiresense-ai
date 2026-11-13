@@ -1,9 +1,12 @@
-"""Tests for the React JSON API (slice A: auth + dashboard).
+"""Tests for the React JSON API.
 
-The Django test client does not enforce CSRF by default, so these
-tests check the view logic (credentials, ownership, shapes) rather
-than the CSRF handshake — the browser flow covers that (see
-frontend/src/api.js, which fetches /api/auth/csrf/ first).
+Sign-in happens against InsForge, in the browser (see
+frontend/src/insforge.js) — there are no session auth endpoints to
+test any more. API tests authenticate with force_login (session,
+flags off) or with minted RS256 Bearer tokens (the InsForge test
+classes below). The Django test client does not enforce CSRF by
+default; the Bearer CSRF exemption is proven explicitly by a
+dedicated test in InsforgeAuthTests.
 """
 
 import os
@@ -16,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.management import CommandError, call_command
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 
 from applications.models import Application, GapTask
 from api.insforge_auth import resolve_user
@@ -38,86 +41,14 @@ def make_resume(owner, name="resume.pdf", score=56):
     return resume
 
 
-class AuthApiTests(TestCase):
-    def test_csrf_endpoint_sets_cookie(self):
-        response = self.client.get("/api/auth/csrf/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("csrftoken", response.cookies)
-
+class MeApiTests(TestCase):
+    # me/ is the only auth-adjacent endpoint left; the session
+    # csrf/login/register/logout endpoints were removed in the
+    # InsForge swap (Phase 5). Bearer-authenticated me/ is covered
+    # by InsforgeAuthTests.
     def test_me_anonymous(self):
         response = self.client.get("/api/auth/me/")
         self.assertEqual(response.json(), {"authenticated": False})
-
-    def test_login_success_then_me(self):
-        make_user("demo")
-        response = self.client.post(
-            "/api/auth/login/",
-            {"username": "demo", "password": "pw123456"},
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"username": "demo"})
-        me = self.client.get("/api/auth/me/")
-        self.assertEqual(
-            me.json(), {"authenticated": True, "username": "demo"})
-
-    def test_login_wrong_password(self):
-        make_user("demo")
-        response = self.client.post(
-            "/api/auth/login/",
-            {"username": "demo", "password": "wrong"},
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_register_creates_hashed_user_and_signs_in(self):
-        response = self.client.post(
-            "/api/auth/register/",
-            {"username": "pawan", "password": "Str0ng!Pass99"},
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json(), {"username": "pawan"})
-        user = User.objects.get(username="pawan")
-        # Stored hashed, never as plaintext, and verifiable.
-        self.assertNotEqual(user.password, "Str0ng!Pass99")
-        self.assertTrue(user.password.startswith("pbkdf2_"))
-        self.assertTrue(user.check_password("Str0ng!Pass99"))
-        # Registering also signs the new user in.
-        me = self.client.get("/api/auth/me/")
-        self.assertEqual(
-            me.json(), {"authenticated": True, "username": "pawan"})
-
-    def test_register_rejects_duplicate_username(self):
-        make_user("demo")
-        response = self.client.post(
-            "/api/auth/register/",
-            {"username": "Demo", "password": "Str0ng!Pass99"},
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(User.objects.filter(username__iexact="demo").count(), 1)
-
-    def test_register_rejects_weak_password(self):
-        response = self.client.post(
-            "/api/auth/register/",
-            {"username": "pawan", "password": "12345678"},
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(User.objects.filter(username="pawan").exists())
-
-    def test_logout_ends_session(self):
-        make_user("demo")
-        self.client.post(
-            "/api/auth/login/",
-            {"username": "demo", "password": "pw123456"},
-            content_type="application/json",
-        )
-        response = self.client.post("/api/auth/logout/")
-        self.assertEqual(response.status_code, 200)
-        me = self.client.get("/api/auth/me/")
-        self.assertEqual(me.json(), {"authenticated": False})
 
 
 class DashboardApiTests(TestCase):
@@ -908,6 +839,22 @@ class InsforgeAuthTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["resumes"]), 1)
 
+    def test_bearer_post_is_csrf_exempt_but_session_post_is_not(self):
+        # Phase 5: a verified Bearer request carries no cookie
+        # credential, so the middleware exempts it from CSRF; a
+        # session POST without a CSRF token must still 403.
+        csrf_client = Client(enforce_csrf_checks=True)
+        body = {"title": "Backend Dev", "raw_text": "x" * 40}
+        bearer = csrf_client.post(
+            "/api/jdmatch/jds/", body,
+            content_type="application/json",
+            **self._bearer(_mint_token()))
+        self.assertEqual(bearer.status_code, 201)
+        csrf_client.force_login(make_user("demo"))
+        session = csrf_client.post(
+            "/api/jdmatch/jds/", body, content_type="application/json")
+        self.assertEqual(session.status_code, 403)
+
 
 class InsforgeFlagOffTests(TestCase):
     @override_settings(INSFORGE_AUTH_ENABLED=False)
@@ -1050,19 +997,21 @@ class InsforgeCutoverTests(TestCase):
             "/api/dashboard/", **self._bearer("not-a-jwt"))
         self.assertEqual(response.status_code, 401)
 
-    def test_session_auth_endpoints_are_gone(self):
+    def test_session_auth_endpoints_are_removed(self):
+        # Phase 4 answered 410; Phase 5 removed the endpoints, so a
+        # stale client now gets 404 (no route matches at all).
         self.assertEqual(
-            self.client.get("/api/auth/csrf/").status_code, 410)
+            self.client.get("/api/auth/csrf/").status_code, 404)
         self.assertEqual(
             self.client.post("/api/auth/login/",
                              data="{}", content_type="application/json"
-                             ).status_code, 410)
+                             ).status_code, 404)
         self.assertEqual(
             self.client.post("/api/auth/register/",
                              data="{}", content_type="application/json"
-                             ).status_code, 410)
+                             ).status_code, 404)
         self.assertEqual(
-            self.client.post("/api/auth/logout/").status_code, 410)
+            self.client.post("/api/auth/logout/").status_code, 404)
 
     def test_me_endpoint_is_not_gone(self):
         # me/ is how the frontend checks auth state under Bearer auth.
@@ -1088,9 +1037,8 @@ class InsforgeRequiredWithoutEnabledTests(TestCase):
     @override_settings(
         INSFORGE_AUTH_ENABLED=False, INSFORGE_AUTH_REQUIRED=True)
     def test_required_is_inert_without_enabled(self):
+        # REQUIRED alone changes nothing: sessions still authenticate
+        # the API exactly as before (the session auth endpoints no
+        # longer exist at all — see test_session_auth_endpoints_...).
         self.client.force_login(make_user("demo"))
         self.assertEqual(self.client.get("/api/dashboard/").status_code, 200)
-        # Session endpoints still live: bad credentials -> 400, not 410.
-        response = self.client.post(
-            "/api/auth/login/", data="{}", content_type="application/json")
-        self.assertEqual(response.status_code, 400)

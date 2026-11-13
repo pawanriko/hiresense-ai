@@ -46,6 +46,14 @@ HOW IT WORKS, STEP BY STEP:
      Django account -> 409: the link must come from the approved
      mapping (``link_insforge_users``), never silently, because with
      email verification off an email match alone proves nothing.
+  4. A verified Bearer request is CSRF-exempt: the middleware sets
+     ``request._dont_enforce_csrf_checks`` (the flag Django's own
+     CsrfViewMiddleware honours). CSRF protection exists for cookie
+     credentials — a Bearer token is not a cookie, it is not sent
+     automatically by the browser, and a malicious site cannot read
+     it out of this app's JS memory. The frontend therefore sends
+     no CSRF header. HTML form posts (which carry no Bearer token)
+     are unaffected — they still go through the CSRF check.
 
 WHAT IT DOES NOT DO: it never mints tokens, never talks to InsForge
 about passwords, and never revokes anything. Logout is the frontend
@@ -273,6 +281,13 @@ class InsforgeAuthMiddleware:
                 if required:
                     request.user = AnonymousUser()
                 return None
+            # Verified: this request authenticates by token, not by
+            # cookie, so Django's CSRF check does not apply (see
+            # step 4 in the module docstring). The flag must be set
+            # here, before the view layer runs CsrfViewMiddleware's
+            # process_view — middleware __call__ code always runs
+            # first, whatever the MIDDLEWARE order.
+            request._dont_enforce_csrf_checks = True
             return None
         if required:
             # No usable token: after cutover a session cookie does

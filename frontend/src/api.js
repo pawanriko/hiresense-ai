@@ -1,60 +1,33 @@
 // Tiny API client — the only place that knows how Django auth works.
 //
-// TWO MODES (see insforge.js for the switch):
-//  * Session mode (default): Django session cookies + a CSRF token.
-//    Before the first POST we GET /api/auth/csrf/, which sets the
-//    `csrftoken` cookie (Django's CSRF cookie is readable by JS by
-//    design). Every later non-GET request sends that cookie's value
-//    back as the X-CSRFToken header, and `credentials: 'include'`
-//    makes the browser send the session cookie along. No tokens are
-//    stored anywhere in JS.
-//  * InsForge mode: every request ALSO carries the InsForge access
-//    token as Authorization: Bearer. The CSRF header is still sent
-//    (Django's CSRF check runs before auth) until the Phase 5
-//    cleanup exempts verified Bearer calls. On a 401 the client
-//    refreshes the token once and retries once — access tokens live
-//    15 minutes, so expiry mid-session is normal, not an error.
+// Every request carries the InsForge access token as Authorization:
+// Bearer (see insforge.js — the token lives in memory, refreshed
+// from an httpOnly cookie). Django verifies the token and exempts
+// verified Bearer calls from CSRF (a token is not a cookie — see
+// api/insforge_auth.py), so no CSRF header is sent. On a 401 the
+// client refreshes the token once and retries once — access tokens
+// live 15 minutes, so expiry mid-session is normal, not an error.
 import {
-  INSFORGE_MODE,
   getAccessToken,
   insforgeSignOut,
   refreshInsforgeSession,
 } from './insforge'
 
-function getCookie(name) {
-  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-  return match ? decodeURIComponent(match[2]) : ''
-}
-
-let csrfReady = null
-export function ensureCsrf() {
-  if (!csrfReady) {
-    csrfReady = fetch('/api/auth/csrf/', { credentials: 'include' }).then(() => {})
-  }
-  return csrfReady
-}
-
 function bearerHeaders(headers) {
-  if (INSFORGE_MODE) {
-    const token = getAccessToken()
-    if (token) headers['Authorization'] = `Bearer ${token}`
-  }
+  const token = getAccessToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return headers
 }
 
 async function request(path, { method = 'GET', body, _retried = false } = {}) {
   const headers = bearerHeaders({ 'Content-Type': 'application/json' })
-  if (method !== 'GET') {
-    await ensureCsrf()
-    headers['X-CSRFToken'] = getCookie('csrftoken')
-  }
   const response = await fetch(path, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
     credentials: 'include',
   })
-  if (response.status === 401 && INSFORGE_MODE && !_retried) {
+  if (response.status === 401 && !_retried) {
     const refreshed = await refreshInsforgeSession()
     if (refreshed) {
       return request(path, { method, body, _retried: true })
@@ -69,9 +42,8 @@ async function request(path, { method = 'GET', body, _retried = false } = {}) {
 
 async function requestFormData(path, formData) {
   // Multipart upload: the browser sets Content-Type (with boundary)
-  // itself, so we must NOT set it — only the CSRF header goes on.
-  await ensureCsrf()
-  const headers = bearerHeaders({ 'X-CSRFToken': getCookie('csrftoken') })
+  // itself, so we must NOT set it — only the Bearer header goes on.
+  const headers = bearerHeaders({})
   const response = await fetch(path, {
     method: 'POST',
     headers,
@@ -87,19 +59,9 @@ async function requestFormData(path, formData) {
 
 export const api = {
   me: () => request('/api/auth/me/'),
-  // Session-mode only: in InsForge mode the Login/Signup pages call
-  // the SDK directly (see insforge.js) and never touch these.
-  login: (username, password) =>
-    request('/api/auth/login/', { method: 'POST', body: { username, password } }),
-  register: (username, password, email) =>
-    request('/api/auth/register/', {
-      method: 'POST',
-      body: { username, password, email },
-    }),
-  logout: () => {
-    if (INSFORGE_MODE) return insforgeSignOut()
-    return request('/api/auth/logout/', { method: 'POST' })
-  },
+  // Sign-in/up happen against InsForge directly (see insforge.js);
+  // the pages call the SDK, then me(), and never touch Django auth.
+  logout: () => insforgeSignOut(),
   dashboard: () => request('/api/dashboard/'),
   resumes: () => request('/api/resumes/'),
   resumeDetail: (id) => request(`/api/resumes/${id}/`),

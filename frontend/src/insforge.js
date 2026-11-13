@@ -20,27 +20,26 @@
 // round-trip per signed-in page load; the alternative (reaching into
 // the SDK's internals) would break on any SDK update.
 //
-// INSFORGE_MODE is a BUILD-TIME switch: it is on only when both Vite
-// env vars are set (VITE_INSFORGE_URL + VITE_INSFORGE_ANON_KEY).
-// Without them the app runs the old Django session flow untouched —
-// that is the dual-auth window (Phase 2) and the rollback path
-// (unset the vars, redeploy). The anon key is public by design
-// (InsForge's own docs call it browser-safe); it only identifies the
-// project, it grants no user data.
+// CONFIGURATION: the two Vite env vars (VITE_INSFORGE_URL +
+// VITE_INSFORGE_ANON_KEY) are REQUIRED at build time — there is no
+// session-auth fallback any more (the InsForge swap, Phase 5,
+// removed it). A build without them fails visibly at sign-in time
+// instead of silently serving a broken app. The anon key is public
+// by design (InsForge's own docs call it browser-safe); it only
+// identifies the project, it grants no user data.
 import { createClient } from '@insforge/sdk'
-
-export const INSFORGE_MODE = Boolean(
-  import.meta.env.VITE_INSFORGE_URL && import.meta.env.VITE_INSFORGE_ANON_KEY,
-)
 
 let client = null
 export function getInsforgeClient() {
-  if (!INSFORGE_MODE) return null
   if (!client) {
-    client = createClient({
-      baseUrl: import.meta.env.VITE_INSFORGE_URL,
-      anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY,
-    })
+    const baseUrl = import.meta.env.VITE_INSFORGE_URL
+    const anonKey = import.meta.env.VITE_INSFORGE_ANON_KEY
+    if (!baseUrl || !anonKey) {
+      throw new Error(
+        'InsForge is not configured — set VITE_INSFORGE_URL and VITE_INSFORGE_ANON_KEY and rebuild.',
+      )
+    }
+    client = createClient({ baseUrl, anonKey })
   }
   return client
 }
@@ -72,7 +71,6 @@ export function initInsforgeSession() {
 
 async function doInitInsforgeSession() {
   const insforge = getInsforgeClient()
-  if (!insforge) return null
   const { data, error } = await insforge.auth.getCurrentUser()
   if (error || !data?.user) return null
   // getCurrentUser returns no token, so mint one from the cookie.
@@ -99,7 +97,6 @@ export function getAccessToken() {
 // token is now in memory.
 export async function refreshInsforgeSession() {
   const insforge = getInsforgeClient()
-  if (!insforge) return false
   const { data, error } = await insforge.auth.refreshSession()
   capture(data)
   return !error && Boolean(data?.accessToken)
@@ -140,8 +137,14 @@ export async function insforgeSignUp(email, password, name) {
 export async function insforgeSignOut() {
   accessToken = null
   initPromise = null
-  const insforge = getInsforgeClient()
-  if (insforge) await insforge.auth.signOut()
+  // Signing out must never throw: even if the SDK call fails (or
+  // the client was never configured), the local session is already
+  // dropped above, which is what the UI acts on.
+  try {
+    await getInsforgeClient().auth.signOut()
+  } catch {
+    // Already signed out locally; nothing left to do.
+  }
 }
 
 // Google sign-in: the SDK redirects to Google, Google redirects back

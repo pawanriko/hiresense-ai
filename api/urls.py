@@ -5,11 +5,11 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path("auth/csrf/", views.csrf, name="api-csrf"),
+    # auth/me/ is the only auth endpoint left: sign-in/out happen
+    # against InsForge, in the browser (see frontend/src/insforge.js).
+    # The old csrf/login/register/logout endpoints were removed in
+    # the InsForge swap (Phase 5).
     path("auth/me/", views.me, name="api-me"),
-    path("auth/login/", views.login_view, name="api-login"),
-    path("auth/register/", views.register_view, name="api-register"),
-    path("auth/logout/", views.logout_view, name="api-logout"),
     path("dashboard/", views.dashboard, name="api-dashboard"),
     path("resumes/", views.resume_list, name="api-resume-list"),
     path("resumes/upload/", views.resume_upload, name="api-resume-upload"),

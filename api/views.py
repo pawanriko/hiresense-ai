@@ -1,28 +1,25 @@
 """JSON API views for the React frontend.
 
-AUTH MODEL — session auth, plus InsForge JWT auth when enabled:
-  * The React dev server (Vite, :5173) proxies /api/* to Django (:8000),
-    so from the browser's point of view every API call is same-origin.
-    That means no CORS setup and no cookie gymnastics: the session
-    cookie and the CSRF cookie just work like a normal Django page.
-  * Every POST needs a CSRF token. The frontend first calls
-    GET /api/auth/csrf/ (which sets the csrftoken cookie), reads that
-    cookie in JS, and sends it back as the X-CSRFToken header.
-    Django's CsrfViewMiddleware checks it exactly like a form post.
-    (Bearer-authenticated calls send the CSRF header too, until the
-    Phase 5 cleanup — see api/insforge_auth.py.)
-  * @login_required would redirect anonymous API calls to the HTML
-    login page, which React cannot use — so these views check
-    request.user.is_authenticated themselves and answer 401 JSON.
-  * When INSFORGE_AUTH_ENABLED is true, the InsforgeAuthMiddleware
-    (see api/insforge_auth.py) may ALSO set request.user from a
-    verified InsForge Bearer token. Sessions keep working alongside
-    (dual-auth); the views below never know which one applied.
-  * When INSFORGE_AUTH_REQUIRED is ALSO true (the cutover), the
-    session auth endpoints below answer 410 Gone — sign-in happens
-    against InsForge, in the browser, via the SDK — and a session
-    cookie no longer authenticates any /api/ request. The HTML
-    pages and /admin/ keep Django sessions (deliberate exception).
+AUTH MODEL — InsForge JWT auth (see api/insforge_auth.py):
+  * The browser signs in against InsForge directly (email + password,
+    or Google via InsForge) and sends the access token on every API
+    call as Authorization: Bearer. The InsforgeAuthMiddleware
+    verifies the token and sets request.user before any view runs,
+    so the views below never know auth happened — they just check
+    request.user.is_authenticated and answer 401 JSON when it is
+    not. (@login_required would redirect to the HTML login page,
+    which React cannot use.)
+  * There are no session auth endpoints any more: the old
+    csrf/login/register/logout views were removed in the InsForge
+    swap (Phase 5). The only auth-adjacent endpoint left is
+    auth/me/, which reports who the token belongs to.
+  * CSRF: Bearer-verified requests are exempt (the middleware sets
+    request._dont_enforce_csrf_checks) — CSRF protects cookie auth,
+    and these requests carry no cookie credential. The HTML pages
+    still use Django sessions + CSRF tokens as before.
+  * The React dev server (Vite, :5173) proxies /api/* to Django
+    (:8000), so from the browser's point of view every API call is
+    same-origin and no CORS setup is needed.
 
 WHY NOT DJANGO REST FRAMEWORK: these endpoints are thin wrappers
 around queries the HTML views already make (see dashboard/views.py).
@@ -30,17 +27,10 @@ JsonResponse + the session framework covers them with zero new
 dependencies, which keeps Windows setup as one pip install.
 """
 
-import functools
 import json
 
-from django.conf import settings
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 
 from applications.models import Application, GapTask
@@ -75,34 +65,6 @@ def _unauthenticated():
     return JsonResponse({"detail": "Not authenticated"}, status=401)
 
 
-def _gone_after_cutover(view):
-    """After the InsForge cutover (INSFORGE_AUTH_REQUIRED), the
-    session auth endpoints are gone: sign-in happens against
-    InsForge, in the browser, via the SDK. 410 (not 404) so a stale
-    client knows the endpoint was deliberately removed. Both flags
-    must be on (REQUIRED without ENABLED does nothing, same rule
-    as the middleware). Applied OUTERMOST so the 410 fires before
-    CSRF/method checks. Removed with the endpoints themselves in
-    Phase 5."""
-    @functools.wraps(view)
-    def wrapper(request, *args, **kwargs):
-        if (getattr(settings, "INSFORGE_AUTH_ENABLED", False)
-                and getattr(settings, "INSFORGE_AUTH_REQUIRED", False)):
-            return JsonResponse(
-                {"detail": "Session auth is gone; sign in via InsForge."},
-                status=410,
-            )
-        return view(request, *args, **kwargs)
-    return wrapper
-
-
-@_gone_after_cutover
-@ensure_csrf_cookie
-def csrf(request):
-    """Set the csrftoken cookie. The frontend calls this once on load."""
-    return JsonResponse({})
-
-
 def me(request):
     """Who is signed in, if anyone. The frontend calls this on load
     to decide between the login page and the app."""
@@ -112,73 +74,6 @@ def me(request):
             "username": request.user.username,
         })
     return JsonResponse({"authenticated": False})
-
-
-@_gone_after_cutover
-@require_POST
-def login_view(request):
-    """Sign in with a username + password JSON body, creating the
-    same session the HTML login page creates."""
-    try:
-        body = json.loads(request.body or "{}")
-    except ValueError:
-        return JsonResponse({"detail": "Invalid JSON body"}, status=400)
-    user = authenticate(
-        request,
-        username=body.get("username", ""),
-        password=body.get("password", ""),
-    )
-    if user is None:
-        return JsonResponse(
-            {"detail": "Invalid username or password"}, status=400)
-    login(request, user)
-    return JsonResponse({"username": user.username})
-
-
-@_gone_after_cutover
-@require_POST
-def register_view(request):
-    """Create an account with a username + password JSON body, then
-    sign the new user in (same session login_view creates).
-
-    Passwords are stored by Django's auth system in the database as
-    PBKDF2 hashes — never in plaintext. The password runs through the
-    project's AUTH_PASSWORD_VALIDATORS (length, common-password and
-    similarity checks) before the account is created.
-    """
-    try:
-        body = json.loads(request.body or "{}")
-    except ValueError:
-        return JsonResponse({"detail": "Invalid JSON body"}, status=400)
-    username = (body.get("username") or "").strip()
-    password = body.get("password") or ""
-    email = (body.get("email") or "").strip()
-    if not username:
-        return JsonResponse({"detail": "Username is required"}, status=400)
-    if User.objects.filter(username__iexact=username).exists():
-        return JsonResponse(
-            {"detail": "That username is already taken"}, status=400
-        )
-    try:
-        validate_password(password, user=User(username=username, email=email))
-    except ValidationError as exc:
-        return JsonResponse({"detail": " ".join(exc.messages)}, status=400)
-    User.objects.create_user(
-        username=username, password=password, email=email
-    )
-    # Re-authenticate so login() gets a user with its auth backend set
-    # (a freshly created user object does not carry one yet).
-    user = authenticate(request, username=username, password=password)
-    login(request, user)
-    return JsonResponse({"username": user.username}, status=201)
-
-
-@_gone_after_cutover
-@require_POST
-def logout_view(request):
-    """Sign out, ending the session."""
-    logout(request)
-    return JsonResponse({})
 
 
 def dashboard(request):

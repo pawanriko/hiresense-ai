@@ -22,7 +22,7 @@ Two honest warnings: it's on Render's free tier, which sleeps when nobody visits
 
 ## The interface
 
-The frontend is a React single-page app (Vite) talking to a Django JSON API with session login. The original server-rendered Django pages are still there too, at their normal URLs. The design is monochrome — black and white, bold type, thin borders — with a dark/light toggle that remembers your choice.
+The frontend is a React single-page app (Vite) talking to a Django JSON API with InsForge auth (email + password, or Google via InsForge). The original server-rendered Django pages are still there too, at their normal URLs, on Django session login. The design is monochrome — black and white, bold type, thin borders — with a dark/light toggle that remembers your choice.
 
 ## Tech stack
 
@@ -31,10 +31,10 @@ The frontend is a React single-page app (Vite) talking to a Django JSON API with
 | Backend | Django 5.2 (LTS), Python 3.12 |
 | Frontend | React 19 + Vite, react-router-dom |
 | Database | SQLite by default; Postgres (Supabase) via `DATABASE_URL` |
-| Auth | Django sessions; optional Google OAuth (django-allauth) |
+| Auth | InsForge JWT (RS256, verified via JWKS) for the API; Django sessions for the HTML pages + `/admin/` |
 | AI (optional) | Groq / Gemini via plain `urllib` — no SDK dependencies |
 | Production | gunicorn + WhiteNoise, Render Blueprint (`render.yaml`) |
-| Tests | 178 Django tests (scoring, flows, API, OAuth, DB switch, AI fallbacks — all AI calls mocked) |
+| Tests | Django tests (scoring, flows, API, InsForge auth, DB switch, AI fallbacks — all AI calls mocked) |
 
 ## How the code is organised
 
@@ -47,7 +47,7 @@ The frontend is a React single-page app (Vite) talking to a Django JSON API with
 | `jdmatch/` | JD Match models + HTML pages (criteria drafting, evidence, gaps) |
 | `interview/` | Mock-interview sessions + HTML pages |
 | `applications/` | Application tracker + gap tasks (+ the push-from-gap helpers the API reuses) |
-| `accounts/` | Login/logout, `seed_demo` command, Google OAuth guards |
+| `accounts/` | Login/logout (HTML pages), `seed_demo` command |
 | `dashboard/` | HTML dashboard view (the React dashboard reads `/api/dashboard/`) |
 | `templates/` | Shared layout for the HTML pages |
 
@@ -75,9 +75,9 @@ python manage.py seed_demo
 python manage.py runserver
 ```
 
-Sign in as `demo` / `demo1234`. If `frontend/dist` exists, the server serves the built React app from it (in a fresh clone, build it once: `cd frontend && npm install && npm run build`). The HTML pages work either way.
+The HTML pages sign in as `demo` / `demo1234` (see `/accounts/login/`). The React app signs in through InsForge instead — it needs the InsForge variables first (see "InsForge auth" below), plus a built frontend: `cd frontend && npm install && npm run build`. The demo account in InsForge is `demo@hiresense.ai` / `demo1234`; the build links it to the Django demo user, so it sees the demo data.
 
-> **Python 3.13+ note:** `psycopg[binary]` (the Postgres driver) may not have a wheel for the newest Python yet. SQLite mode never uses it — if `pip install` fails on psycopg, install everything else and skip it: `pip install Django==5.2.18 pypdf==6.21.2 python-docx==1.2.0 django-allauth==65.20.1 requests==2.34.2 python-dotenv==1.2.4 gunicorn==23.0.0 whitenoise==6.9.0`
+> **Python 3.13+ note:** `psycopg[binary]` (the Postgres driver) may not have a wheel for the newest Python yet. SQLite mode never uses it — if `pip install` fails on psycopg, install everything else and skip it: `pip install Django==5.2.19 pypdf==6.21.2 python-docx==1.2.0 requests==2.34.2 python-dotenv==1.2.4 "PyJWT[crypto]==2.15.1" cryptography==50.0.2 gunicorn==23.0.0 whitenoise==6.9.0`
 
 **Working on the frontend** (with hot reload): run Django on :8000 as above, then `cd frontend && npm install && npm run dev` and open http://localhost:5173. Vite proxies `/api` to Django, so logging in works exactly like production.
 
@@ -87,24 +87,25 @@ Sign in as `demo` / `demo1234`. If `frontend/dist` exists, the server serves the
 python manage.py test
 ```
 
-178 tests: the JD Match rubric and the ATS scorer, criteria extraction, the interview checklist (including the relevance regression), upload flows, owner-only rules everywhere, the full JSON API, the Google OAuth flow (with mocked network calls), the SQLite↔Postgres switch, and every AI provider path with mocked clients — including the rule that any AI failure falls back silently and never changes a score.
+The suite covers the JD Match rubric and the ATS scorer, criteria extraction, the interview checklist (including the relevance regression), upload flows, owner-only rules everywhere, the full JSON API, the InsForge JWT auth (minted RS256 tokens, mocked JWKS fetch — expiry, wrong signatures, unknown keys, email collisions, the cutover flags, the CSRF exemption), the SQLite↔Postgres switch, and every AI provider path with mocked clients — including the rule that any AI failure falls back silently and never changes a score.
 
 ## Optional extras
 
-Everything below is opt-in through a `.env` file next to `manage.py` (copy `.env.example`). With no keys at all, the app still works fully on SQLite with the demo login.
+Everything below is opt-in through a `.env` file next to `manage.py` (copy `.env.example`). With no keys at all, the HTML pages still work fully on SQLite with the demo login — but the React app needs the InsForge variables (see below), or its login page will say auth is not configured.
 
-### Google OAuth login
+### InsForge auth
 
-The code is ready for Google sign-in, but you have to register your own OAuth client once (about 5 minutes):
+Sign-in for the React app lives in [InsForge](https://insforge.dev) (a backend-as-a-service): the browser signs users in against InsForge with email + password or Google, and Django verifies the resulting RS256 access tokens against InsForge's public JWKS — no shared secret, no password ever touches Django. User data still hangs off Django users, linked to InsForge identities by the token's `sub` claim (see `api/insforge_auth.py` and `api/models.py`).
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → create a project → **APIs & Services → OAuth consent screen**: app name `HireSense AI`, External audience, your email as support/contact.
-2. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → Web application → under **Authorized redirect URIs** paste exactly:
-   `http://127.0.0.1:8000/accounts/google/login/callback/`
-   (character for character — `127.0.0.1`, not `localhost`).
-3. Put the client ID and secret in `.env` as `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` and restart the server. A **Sign in with Google** button appears on the login page. No keys = no button, and the demo login is untouched. `.env` is gitignored, as it should be.
-4. For production, add your deployed callback URL (e.g. `https://hiresense-ai-s8ih.onrender.com/accounts/google/login/callback/`) as a second redirect URI on the same client.
+To run it yourself:
 
-If something breaks: `redirect_uri_mismatch` means the URI differs by even one character. Button still hidden usually means the server didn't restart (it reads `.env` only at startup) or the file isn't named exactly `.env`.
+1. Create a free InsForge account + project. Note the project's base URL (`https://<appkey>.us-east.insforge.app`) and its public **anon key** (dashboard → API keys — the anon key is browser-safe by design; never use the service/admin key in the frontend).
+2. Backend (`.env` next to `manage.py`): `INSFORGE_AUTH_ENABLED=true` and `INSFORGE_BASE_URL=<project URL>`. That turns on dual-auth: Bearer tokens work alongside Django sessions for `/api/`.
+3. Frontend (`frontend/.env`, gitignored): `VITE_INSFORGE_URL=<same project URL>` and `VITE_INSFORGE_ANON_KEY=<anon key>`. These are read at BUILD time — rebuild after changing them (`npm run build`, or restart `npm run dev`).
+4. Create the demo account in InsForge (`demo@hiresense.ai` / `demo1234`), then link it to the Django demo user: `INSFORGE_LINK_MAP='{"demo@hiresense.ai": "<its InsForge user id>"}' python manage.py link_insforge_users --apply`. Run `--report` first to see link state. The command is all-or-nothing and idempotent; on Render it runs in the build, right after `seed_demo`.
+5. Cutover: set `INSFORGE_AUTH_REQUIRED=true` as well. Now `/api/` is Bearer-only — session cookies no longer authenticate it. The HTML pages and `/admin/` keep Django sessions in every state (deliberate). Roll back by unsetting `INSFORGE_AUTH_REQUIRED`.
+
+Known limits: InsForge access tokens are stateless — signing out drops the token locally, but the token stays valid until its 15-minute expiry. Email verification is off unless you configure SMTP in InsForge; with it off, the link command never auto-links on email alone (an email match proves nothing), so existing accounts can only be linked through the explicit mapping above.
 
 ### Supabase Postgres
 
@@ -123,11 +124,11 @@ With a key set: JD Match drafts its criteria with AI, interview questions are ge
 The repo has a Blueprint (`render.yaml`): one web service (Django + the built React app, served by WhiteNoise) and one free Postgres database.
 
 1. render.com → connect GitHub → **New → Blueprint** → pick this repo. Render creates both resources from `render.yaml`.
-2. The build installs the Python and Node dependencies, builds the React app, collects static files, migrates, and runs `seed_demo` — that's how the demo login exists on the live database, because Render's Shell is paid-only and the build has to do the seeding.
+2. The build installs the Python and Node dependencies, builds the React app, collects static files, migrates, runs `seed_demo`, and runs `link_insforge_users --apply` — that's how the demo login (and its InsForge link) exists on the live database, because Render's Shell is paid-only and the build has to do the seeding.
 3. After pushing code later, deploy it with **Manual Deploy → Deploy latest commit** on the service page — Blueprint services don't auto-deploy on every push. If `render.yaml` itself changed, run a **Blueprint Manual sync** first so the new build command is picked up.
-4. Optional env vars if you want AI on the live site: `GROQ_API_KEY`, `GEMINI_API_KEY`.
+4. Env vars on the live service: the InsForge set (`INSFORGE_AUTH_ENABLED`, `INSFORGE_AUTH_REQUIRED`, `INSFORGE_BASE_URL`, `VITE_INSFORGE_URL`, `VITE_INSFORGE_ANON_KEY`, `INSFORGE_LINK_MAP`) — the Vite ones must be set BEFORE the deploy that builds the frontend. Optional AI vars: `GROQ_API_KEY`, `GEMINI_API_KEY`.
 
-Production notes: `DEBUG=False`, `SECRET_KEY` generated by Render, secure cookies + `SECURE_PROXY_SSL_HEADER` when not debugging, and the SPA and `/api` share one origin so session and CSRF cookies just work.
+Production notes: `DEBUG=False`, `SECRET_KEY` generated by Render, secure cookies + `SECURE_PROXY_SSL_HEADER` when not debugging, and the SPA and `/api` share one origin so no CORS setup is needed.
 
 ## Roadmap
 

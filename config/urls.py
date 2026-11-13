@@ -5,11 +5,10 @@ the first pattern that matches. ``include()`` hands a whole URL prefix to an
 app's own urls.py, so each app owns its little corner of the site:
 
     /                    -> React SPA (production) — see SPA_ROUTES below
-    /accounts/login/     -> accounts app (Django's built-in login view)
+    /accounts/login/     -> accounts app (Django's built-in login view,
+        for the HTML pages + /admin/ only; the React app signs in
+        through InsForge)
     /accounts/logout/    -> accounts app (logout)
-    /accounts/google/login/ (+ callback) -> accounts app guards, which
-        delegate to django-allauth's Google flow when configured, or
-        redirect to the login page when it is not (see accounts/urls.py)
     /resumes/upload/     -> resumes app (upload a resume)
     /resumes/<id>/       -> resumes app (one scored resume)
     /jd-match/           -> jdmatch app (JD Match: paste JD, edit criteria, run match)
@@ -55,12 +54,8 @@ SPA_ROUTES = [
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
-    # OUR accounts URLs FIRST: they own /accounts/login/ and /logout/,
-    # and the Google guard paths. allauth's URLs come second and supply
-    # everything else (provider login/callback names, socialaccount
-    # helpers). See accounts/urls.py for why this order matters.
+    # Accounts URLs: the HTML login/logout pages (see accounts/urls.py).
     path('accounts/', include('accounts.urls')),
-    path('accounts/', include('allauth.urls')),
     # Root-level files from the built frontend (favicon, icons).
     path('favicon.svg', config_views.site_file, {'name': 'favicon.svg'}),
     path('icons.svg', config_views.site_file, {'name': 'icons.svg'}),

@@ -22,8 +22,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # the project root (next to manage.py) into the environment, if it exists.
 # It never overwrites variables already set in the real environment, and it
 # silently does nothing when there is no .env file — so this is safe on
-# machines without one. .env holds secrets (see GOOGLE_OAUTH_* below) and
-# must NEVER be committed: it is listed in .gitignore.
+# machines without one. .env holds secrets (see the AI and InsForge
+# settings below) and must NEVER be committed: it is listed in .gitignore.
 from dotenv import load_dotenv
 
 load_dotenv(BASE_DIR / ".env")
@@ -89,17 +89,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # SITES FRAMEWORK: django-allauth needs it (it ties a SocialApp to a
-    # site). We only ever run one site (localhost), so SITE_ID = 1 below.
-    'django.contrib.sites',
-    # ALLAUTH: account = the local login machinery, socialaccount = the
-    # "log in with a provider" machinery, providers.google = Google only.
-    # allauth's own login/signup pages also come with these apps, but our
-    # own /accounts/login/ page stays the front door (see config/urls.py).
-    'allauth',
-    'allauth.account',
-    'allauth.socialaccount',
-    'allauth.socialaccount.providers.google',
     'accounts',
     'resumes',
     'dashboard',
@@ -107,11 +96,9 @@ INSTALLED_APPS = [
     'interview',
     'applications',
     # API: JSON endpoints for the React frontend (frontend/). No new
-    # dependencies — plain JsonResponse views + session auth.
+    # dependencies — plain JsonResponse views + InsForge JWT auth.
     'api',
 ]
-
-SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -124,18 +111,13 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # INSFORGE JWT AUTH (Phase 1, dual-auth): runs AFTER
-    # AuthenticationMiddleware on purpose — a session user wins, and
-    # only session-anonymous /api/ requests with an Authorization:
-    # Bearer header get verified against InsForge (see
-    # api/insforge_auth.py). Inert unless INSFORGE_AUTH_ENABLED.
+    # INSFORGE JWT AUTH (Phases 1 + 4): runs AFTER
+    # AuthenticationMiddleware on purpose — see api/insforge_auth.py
+    # for the dual-window vs cutover behaviour. Inert unless
+    # INSFORGE_AUTH_ENABLED.
     'api.insforge_auth.InsforgeAuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # ALLAUTH MIDDLEWARE: required by django-allauth (it does very little
-    # here — mostly bookkeeping for the account system). Without this line
-    # allauth refuses to start, with a clear error saying so.
-    'allauth.account.middleware.AccountMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -153,10 +135,6 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                # OURS: exposes ``google_oauth_configured`` to every template
-                # so the login page can show/hide the Google button (see
-                # accounts/context_processors.py for why this flag exists).
-                'accounts.context_processors.google_oauth',
             ],
         },
     },
@@ -302,31 +280,6 @@ LOGOUT_REDIRECT_URL = 'accounts:login'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# --- Google OAuth via django-allauth (added after slice 4) ---
-# HOW IT WORKS, IN ONE PARAGRAPH: allauth normally stores a provider's
-# keys in the database (a SocialApp row, edited in /admin/). We instead
-# hand the keys to allauth through settings, straight from environment
-# variables — that way there is nothing secret to create in the admin and
-# nothing secret committed to the repo. allauth's adapter blends both
-# sources, and a settings-backed app works exactly like a database one.
-#
-# TWO STATES, BY DESIGN:
-#   * Keys absent (the default): GOOGLE_OAUTH_CONFIGURED is False, the
-#     SOCIALACCOUNT_PROVIDERS dict stays empty, and allauth has no Google
-#     app at all. The demo login works exactly as before, the Google
-#     button is hidden on the login page, and the guard views in
-#     accounts/views.py turn a direct visit to Google's login/callback
-#     URLs into a friendly redirect instead of a crash.
-#   * Keys present (GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET
-#     set, e.g. in .env): the button appears and the full flow works —
-#     Google -> callback -> allauth creates (or reuses) a Django user
-#     and logs them in, landing on LOGIN_REDIRECT_URL (the dashboard).
-#
-# NEVER hardcode the id/secret here, and never commit a real .env file.
-GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
-GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
-GOOGLE_OAUTH_CONFIGURED = bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
-
 # --- Groq AI (added after the Supabase swap) ---
 # Same two-state pattern as Google OAuth, and the same secrecy rule:
 # NEVER hardcode the key here, and never commit a real .env file.
@@ -393,37 +346,3 @@ INSFORGE_JWKS_CACHE_TTL = int(os.environ.get('INSFORGE_JWKS_CACHE_TTL', '3600'))
 # lands in. 60s is the usual tolerance; it only ever extends the
 # accepted window, never the token's real 15-minute lifetime.
 INSFORGE_JWT_LEEWAY = int(os.environ.get('INSFORGE_JWT_LEEWAY', '60'))
-
-SOCIALACCOUNT_PROVIDERS = {}
-if GOOGLE_OAUTH_CONFIGURED:
-    SOCIALACCOUNT_PROVIDERS['google'] = {
-        # "APP" is allauth's settings-backed app: client_id/secret/key.
-        # "key" is unused by Google's OAuth2 flow but allauth expects the
-        # key to exist, so it is an empty string.
-        'APP': {
-            'client_id': GOOGLE_OAUTH_CLIENT_ID,
-            'secret': GOOGLE_OAUTH_CLIENT_SECRET,
-            'key': '',
-        },
-    }
-
-# ALLAUTH ACCOUNT SETTINGS, and why each one is what it is:
-#   * AUTHENTICATION_BACKENDS: keep Django's normal username/password
-#     backend FIRST (demo login), then allauth's backend (social logins).
-#     Order matters: Django tries them in order until one authenticates.
-#   * EMAIL_VERIFICATION = 'none': no confirmation emails. A Google login
-#     already proves you own the address, and this is a local learning
-#     app with no mail server configured.
-#   * AUTO_SIGNUP = True (allauth's default, stated explicitly): a first
-#     Google login creates a Django user automatically instead of
-#     stopping at an intermediate "complete your signup" form.
-#   * LOGIN_ON_GET stays False (allauth's default): visiting Google's
-#     login URL shows a "Continue" confirmation page first, and only the
-#     POST goes to Google. That extra click is CSRF protection for the
-#     login itself — worth keeping even though it costs one click.
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',
-    'allauth.account.auth_backends.AuthenticationBackend',
-]
-ACCOUNT_EMAIL_VERIFICATION = 'none'
-SOCIALACCOUNT_AUTO_SIGNUP = True

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
-import { INSFORGE_MODE, initInsforgeSession } from './insforge'
+import { initInsforgeSession } from './insforge'
 import SkeletonList from './components/Skeleton.jsx'
 import { ToastProvider } from './components/Toasts.jsx'
 import Login from './pages/Login.jsx'
@@ -126,12 +126,18 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    // In InsForge mode the SDK handshake runs first: it finishes an
-    // OAuth callback exchange (if this load is one) and restores the
-    // session from the refresh cookie — only then can me() see the
-    // Bearer token. In session mode there is nothing to restore.
+    // The SDK handshake runs first: it finishes an OAuth callback
+    // exchange (if this load is one) and restores the session from
+    // the refresh cookie — only then can me() see the Bearer token.
+    // A failed handshake (signed out, or an unconfigured build)
+    // just means me() answers anonymous and the login page shows.
     async function boot() {
-      if (INSFORGE_MODE) await initInsforgeSession()
+      try {
+        await initInsforgeSession()
+      } catch {
+        // Unconfigured build: the login page surfaces the error
+        // when the user tries to sign in.
+      }
       try {
         const data = await api.me()
         setUser(data.authenticated ? { username: data.username } : null)
