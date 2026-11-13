@@ -24,9 +24,14 @@ table is stale.)
 
 HOW IT WORKS, STEP BY STEP:
   1. The middleware runs on /api/ requests only, after Django's own
-     AuthenticationMiddleware. A logged-in session user wins — the
-     token is only consulted when the session says "anonymous".
-     (That is the dual-auth window: old and new logins coexist.)
+     AuthenticationMiddleware. In the DUAL window
+     (INSFORGE_AUTH_ENABLED, INSFORGE_AUTH_REQUIRED off) a logged-in
+     session user wins — the token is only consulted when the
+     session says "anonymous". After CUTOVER (both flags on) the
+     token is the ONLY credential for /api/: a session-only request
+     is forced anonymous, and a bad token never falls back to the
+     session. The HTML pages and /admin/ never pass through here,
+     so they keep Django sessions in every state.
   2. ``verify_token`` checks the JWT header (must be RS256), fetches
      the JWKS document (cached, refetched once on an unknown ``kid``),
      and lets PyJWT verify the signature + expiry. InsForge tokens
@@ -57,6 +62,7 @@ import jwt
 import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 
@@ -225,10 +231,14 @@ def resolve_user(claims):
 class InsforgeAuthMiddleware:
     """Set ``request.user`` from a verified InsForge Bearer token.
 
-    Runs after AuthenticationMiddleware (see MIDDLEWARE in settings):
-    session users are untouched, and only session-anonymous /api/
-    requests carrying ``Authorization: Bearer`` are verified. Inert
-    unless INSFORGE_AUTH_ENABLED. An unverifiable token leaves the
+    Runs after AuthenticationMiddleware (see MIDDLEWARE in settings),
+    on /api/ requests only. Inert unless INSFORGE_AUTH_ENABLED.
+    Dual window (INSFORGE_AUTH_REQUIRED off): session users are
+    untouched, and only session-anonymous requests carrying
+    ``Authorization: Bearer`` are verified. Cutover (REQUIRED on):
+    the Bearer token is the only credential — session-only requests
+    are forced anonymous, and an unverifiable token never falls
+    back to the session. An unverifiable token otherwise leaves the
     request anonymous (views answer 401 as before); an email
     collision short-circuits with 409.
     """
@@ -247,18 +257,27 @@ class InsforgeAuthMiddleware:
             return None
         if not request.path.startswith("/api/"):
             return None
-        if request.user.is_authenticated:
+        required = getattr(settings, "INSFORGE_AUTH_REQUIRED", False)
+        # Dual window, Phase 1 semantics preserved exactly: a
+        # logged-in session wins and the token is never consulted.
+        if not required and request.user.is_authenticated:
             return None
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
+        token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+        if token:
+            try:
+                request.user = resolve_user(verify_token(token))
+            except InsforgeEmailCollision as exc:
+                return JsonResponse({"detail": str(exc)}, status=409)
+            except InsforgeAuthError:
+                if required:
+                    request.user = AnonymousUser()
+                return None
             return None
-        token = auth[7:].strip()
-        if not token:
-            return None
-        try:
-            request.user = resolve_user(verify_token(token))
-        except InsforgeEmailCollision as exc:
-            return JsonResponse({"detail": str(exc)}, status=409)
-        except InsforgeAuthError:
-            return None
+        if required:
+            # No usable token: after cutover a session cookie does
+            # not authenticate an /api/ request. (Already-anonymous
+            # requests are unaffected — AnonymousUser replaces
+            # AnonymousUser.)
+            request.user = AnonymousUser()
         return None

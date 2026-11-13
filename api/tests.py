@@ -1006,3 +1006,91 @@ class LinkInsforgeUsersTests(TestCase):
     def test_apply_rejects_invalid_json(self):
         with self.assertRaises(CommandError):
             self._run("--apply", "--map", "{not json")
+
+
+# --- InsForge cutover enforcement (Phase 4) ---
+
+_INSFORGE_REQUIRED = override_settings(
+    INSFORGE_AUTH_ENABLED=True,
+    INSFORGE_AUTH_REQUIRED=True,
+    INSFORGE_BASE_URL="https://test.insforge.app",
+)
+
+
+@_INSFORGE_REQUIRED
+class InsforgeCutoverTests(TestCase):
+    def setUp(self):
+        patcher = mock.patch(
+            "api.insforge_auth._fetch_jwks", return_value=_TEST_JWKS)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _bearer(self, token):
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def test_session_alone_no_longer_authenticates_api(self):
+        self.client.force_login(make_user("demo"))
+        dashboard = self.client.get("/api/dashboard/")
+        self.assertEqual(dashboard.status_code, 401)
+        me = self.client.get("/api/auth/me/")
+        self.assertEqual(me.json(), {"authenticated": False})
+
+    def test_bearer_still_authenticates_after_cutover(self):
+        token = _mint_token()
+        dashboard = self.client.get(
+            "/api/dashboard/", **self._bearer(token))
+        self.assertEqual(dashboard.status_code, 200)
+        me = self.client.get("/api/auth/me/", **self._bearer(token))
+        self.assertEqual(me.json(), {
+            "authenticated": True, "username": "riko"})
+
+    def test_bad_token_never_falls_back_to_session(self):
+        self.client.force_login(make_user("demo"))
+        response = self.client.get(
+            "/api/dashboard/", **self._bearer("not-a-jwt"))
+        self.assertEqual(response.status_code, 401)
+
+    def test_session_auth_endpoints_are_gone(self):
+        self.assertEqual(
+            self.client.get("/api/auth/csrf/").status_code, 410)
+        self.assertEqual(
+            self.client.post("/api/auth/login/",
+                             data="{}", content_type="application/json"
+                             ).status_code, 410)
+        self.assertEqual(
+            self.client.post("/api/auth/register/",
+                             data="{}", content_type="application/json"
+                             ).status_code, 410)
+        self.assertEqual(
+            self.client.post("/api/auth/logout/").status_code, 410)
+
+    def test_me_endpoint_is_not_gone(self):
+        # me/ is how the frontend checks auth state under Bearer auth.
+        response = self.client.get(
+            "/api/auth/me/", **self._bearer(_mint_token()))
+        self.assertEqual(response.status_code, 200)
+
+    def test_html_pages_keep_session_auth(self):
+        # Documented exception: the dev interface and /admin/ stay
+        # on Django sessions in every flag state.
+        self.client.force_login(make_user("demo"))
+        response = self.client.get("/jd-match/")
+        self.assertEqual(response.status_code, 200)
+        self.client.logout()
+        self.assertEqual(self.client.get("/jd-match/").status_code, 302)
+
+    def test_admin_login_page_still_served(self):
+        response = self.client.get("/admin/login/?next=/admin/")
+        self.assertEqual(response.status_code, 200)
+
+
+class InsforgeRequiredWithoutEnabledTests(TestCase):
+    @override_settings(
+        INSFORGE_AUTH_ENABLED=False, INSFORGE_AUTH_REQUIRED=True)
+    def test_required_is_inert_without_enabled(self):
+        self.client.force_login(make_user("demo"))
+        self.assertEqual(self.client.get("/api/dashboard/").status_code, 200)
+        # Session endpoints still live: bad credentials -> 400, not 410.
+        response = self.client.post(
+            "/api/auth/login/", data="{}", content_type="application/json")
+        self.assertEqual(response.status_code, 400)

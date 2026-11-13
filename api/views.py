@@ -18,6 +18,11 @@ AUTH MODEL — session auth, plus InsForge JWT auth when enabled:
     (see api/insforge_auth.py) may ALSO set request.user from a
     verified InsForge Bearer token. Sessions keep working alongside
     (dual-auth); the views below never know which one applied.
+  * When INSFORGE_AUTH_REQUIRED is ALSO true (the cutover), the
+    session auth endpoints below answer 410 Gone — sign-in happens
+    against InsForge, in the browser, via the SDK — and a session
+    cookie no longer authenticates any /api/ request. The HTML
+    pages and /admin/ keep Django sessions (deliberate exception).
 
 WHY NOT DJANGO REST FRAMEWORK: these endpoints are thin wrappers
 around queries the HTML views already make (see dashboard/views.py).
@@ -25,8 +30,10 @@ JsonResponse + the session framework covers them with zero new
 dependencies, which keeps Windows setup as one pip install.
 """
 
+import functools
 import json
 
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -68,6 +75,28 @@ def _unauthenticated():
     return JsonResponse({"detail": "Not authenticated"}, status=401)
 
 
+def _gone_after_cutover(view):
+    """After the InsForge cutover (INSFORGE_AUTH_REQUIRED), the
+    session auth endpoints are gone: sign-in happens against
+    InsForge, in the browser, via the SDK. 410 (not 404) so a stale
+    client knows the endpoint was deliberately removed. Both flags
+    must be on (REQUIRED without ENABLED does nothing, same rule
+    as the middleware). Applied OUTERMOST so the 410 fires before
+    CSRF/method checks. Removed with the endpoints themselves in
+    Phase 5."""
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if (getattr(settings, "INSFORGE_AUTH_ENABLED", False)
+                and getattr(settings, "INSFORGE_AUTH_REQUIRED", False)):
+            return JsonResponse(
+                {"detail": "Session auth is gone; sign in via InsForge."},
+                status=410,
+            )
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
+@_gone_after_cutover
 @ensure_csrf_cookie
 def csrf(request):
     """Set the csrftoken cookie. The frontend calls this once on load."""
@@ -85,6 +114,7 @@ def me(request):
     return JsonResponse({"authenticated": False})
 
 
+@_gone_after_cutover
 @require_POST
 def login_view(request):
     """Sign in with a username + password JSON body, creating the
@@ -105,6 +135,7 @@ def login_view(request):
     return JsonResponse({"username": user.username})
 
 
+@_gone_after_cutover
 @require_POST
 def register_view(request):
     """Create an account with a username + password JSON body, then
@@ -142,6 +173,7 @@ def register_view(request):
     return JsonResponse({"username": user.username}, status=201)
 
 
+@_gone_after_cutover
 @require_POST
 def logout_view(request):
     """Sign out, ending the session."""

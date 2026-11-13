@@ -356,15 +356,20 @@ GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
 GEMINI_CONFIGURED = bool(GEMINI_API_KEY)
 AI_PROVIDER = os.environ.get('AI_PROVIDER', '')
 
-# --- InsForge JWT auth (Phase 1: dual-auth, flag-gated) ---
-# Same two-state pattern as the AI providers:
+# --- InsForge JWT auth (Phases 1 + 4: two flags, three states) ---
+# Same two-state pattern as the AI providers, plus a cutover flag:
 #   * INSFORGE_AUTH_ENABLED unset/false (the default): the InsForge
 #     middleware does nothing and the API behaves exactly as before
 #     (Django session auth only). Bearer headers are ignored.
-#   * Set to "true" (with INSFORGE_BASE_URL): /api/ requests may ALSO
-#     authenticate with an InsForge access token (Authorization:
-#     Bearer). Sessions keep working alongside — the cutover to
-#     Bearer-only happens in Phase 4, by the same flag.
+#   * ENABLED "true", REQUIRED unset/false (the dual window): /api/
+#     requests may ALSO authenticate with an InsForge access token
+#     (Authorization: Bearer). Sessions keep working alongside.
+#   * ENABLED "true" AND INSFORGE_AUTH_REQUIRED "true" (cutover):
+#     /api/ requests authenticate by Bearer token ONLY — a session
+#     cookie no longer counts — and the session auth endpoints
+#     answer 410 Gone. REQUIRED without ENABLED does nothing.
+#     The HTML pages and /admin/ keep Django sessions in every
+#     state (a deliberate, documented exception).
 # INSFORGE_BASE_URL is the project's API base (the oss_host, e.g.
 # https://<appkey>.us-east.insforge.app). Django derives the JWKS URL
 # from it; no secret is needed to VERIFY tokens (RS256 public keys).
@@ -372,6 +377,9 @@ AI_PROVIDER = os.environ.get('AI_PROVIDER', '')
 # verification needs none of them.
 INSFORGE_AUTH_ENABLED = (
     os.environ.get('INSFORGE_AUTH_ENABLED', 'false').lower() == 'true'
+)
+INSFORGE_AUTH_REQUIRED = (
+    os.environ.get('INSFORGE_AUTH_REQUIRED', 'false').lower() == 'true'
 )
 INSFORGE_BASE_URL = os.environ.get('INSFORGE_BASE_URL', '').rstrip('/')
 # Seconds a fetched JWKS document stays cached in memory. An unknown
