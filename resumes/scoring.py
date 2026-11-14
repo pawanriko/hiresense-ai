@@ -493,9 +493,28 @@ _DATE_LIKE_RE = re.compile(
 
 
 def _ats_bullets(sections):
-    """Experience + Projects sentences longer than 10 chars — the bullets
-    that quantification and action-verb checks measure."""
+    """Experience + Projects bullets — ONE item per bullet.
+
+    A bullet is the text between bullet characters (•), with its
+    continuation lines joined: a bullet wrapped over three lines is
+    ONE bullet, not three. Splitting on line breaks and hyphens (what
+    split_sentences does) shreds 9 real bullets into 50+ fragments —
+    mostly header and URL pieces — and the quantification / action-verb
+    ratios then measure the fragments, failing resumes that should pass.
+
+    Text before the first bullet (project names, Live/Code lines) is
+    skipped: it is not a bullet. Resumes with no bullet characters
+    fall back to split_sentences, so plain-paragraph experience still
+    measures exactly as before.
+    """
     body = "\n".join([sections.get("experience", ""), sections.get("projects", "")])
+    if "•" in body:
+        items = []
+        for chunk in body.split("•")[1:]:
+            item = re.sub(r"\s+", " ", chunk).strip()
+            if len(item) > 10:
+                items.append(item)
+        return items
     return [s for s in split_sentences(body) if len(s) > 10]
 
 

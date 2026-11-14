@@ -23,7 +23,17 @@ def extract_text(uploaded_file, filename):
     uploaded_file.seek(0)
     if name.endswith(".pdf"):
         reader = PdfReader(uploaded_file)
-        pages = [(page.extract_text() or "") for page in reader.pages]
+        # LAYOUT mode, not the default: the default returns text in PDF
+        # content-stream order, which for browser-printed resumes puts
+        # every bullet body AFTER the last section — so section
+        # segmentation filed all bullets under Education and the ATS
+        # checks measured header/link fragments instead of bullets.
+        # Layout mode restores reading order (verified on a real resume:
+        # bullets land in Projects, headings still match).
+        pages = [
+            (page.extract_text(extraction_mode="layout") or "")
+            for page in reader.pages
+        ]
         return "\n".join(pages)
     if name.endswith(".docx"):
         document = Document(uploaded_file)

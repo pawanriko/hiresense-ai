@@ -154,6 +154,52 @@ class AtsTests(SimpleTestCase):
         contact = next(c for c in ats["categories"] if c["name"] == "Contact & links")
         self.assertTrue(all(c["passed"] for c in contact["checks"]))
 
+    def test_bulleted_projects_measure_whole_bullets_not_fragments(self):
+        # Regression: bullets were split on line breaks, hyphens and
+        # dashes, shredding 3 real bullets into 20+ fragments (mostly
+        # header/URL pieces) and failing both ratio checks. Whole
+        # bullets: 2 of 3 carry numbers, all 3 start with action verbs.
+        sections = {
+            "header": "Jane Doe jane@example.com github.com/janedoe",
+            "summary": "Software developer.",
+            "skills": "React, TypeScript",
+            "projects": (
+                "HireSense AI Django · React · 2026–Present\n"
+                "Live: example.com | Code: github.com/janedoe/hiresense\n"
+                "• Built an interview-prep platform with 4 features: ATS "
+                "scoring with a check-by-check breakdown.\n"
+                "• Architected the scoring engine to stay deterministic — "
+                "AI generates feedback only, never a score.\n"
+                "• Replaced session auth with JWT authentication, migrated "
+                "the database, and released v1.0.0 — 195 automated tests."
+            ),
+            "education": "BSc Computer Science 2023",
+        }
+        ats = compute_ats(sections, " ".join(sections.values()))
+        quant = next(c for c in ats["categories"] if c["name"] == "Quantification")
+        verbs = next(c for c in ats["categories"] if c["name"] == "Action verbs")
+        self.assertTrue(quant["checks"][0]["passed"])
+        self.assertTrue(verbs["checks"][0]["passed"])
+        self.assertIn("3 bullets", quant["checks"][0]["detail"])
+        self.assertIn("3 bullets", verbs["checks"][0]["detail"])
+
+    def test_bullets_without_numbers_or_verbs_still_fail(self):
+        # The whole-bullet fix must not pass everything: bullets with
+        # neither numbers nor action verbs still fail both checks.
+        sections = {
+            "header": "Jane Doe",
+            "projects": (
+                "• A console app for student records with file storage.\n"
+                "• Various coursework and small utilities."
+            ),
+        }
+        ats = compute_ats(sections, " ".join(sections.values()))
+        quant = next(c for c in ats["categories"] if c["name"] == "Quantification")
+        verbs = next(c for c in ats["categories"] if c["name"] == "Action verbs")
+        self.assertFalse(quant["checks"][0]["passed"])
+        self.assertFalse(verbs["checks"][0]["passed"])
+        self.assertIn("0 of 2 bullets", quant["checks"][0]["detail"])
+
     def test_near_empty_resume_fails_length_checks(self):
         ats = compute_ats({"header": "Name"}, "Name")
         length_cat = next(c for c in ats["categories"] if c["name"] == "Length & format")
