@@ -19,6 +19,14 @@ export default function ResumeDetail() {
   if (error) return <p className="error">{error}</p>
   if (!resume) return <SkeletonList count={3} />
 
+  // What is lacking, first: every failed check across categories, with
+  // the fix its detail string already describes.
+  const failed = resume.breakdown.categories.flatMap((category) =>
+    category.checks
+      .filter((check) => !check.passed)
+      .map((check) => ({ ...check, category: category.name })),
+  )
+
   return (
     <section>
       <p><Link to="/resumes">← All resumes</Link></p>
@@ -27,6 +35,21 @@ export default function ResumeDetail() {
         <ScoreRing value={resume.ats_score} label="ATS" />
       </div>
 
+      {failed.length > 0 ? (
+        <div className="card">
+          <h2>What to fix</h2>
+          <ul className="list">
+            {failed.map((check) => (
+              <li key={`${check.category}-${check.name}`}>
+                <span className="fail">✗</span>{' '}
+                <strong>{check.name}</strong> — {check.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="muted">Nothing missing — every check passed.</p>
+      )}
       {resume.breakdown.categories.map((category) => (
         <div className="card" key={category.name}>
           <ScoreBar label={category.name} value={category.score} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import SkeletonList from '../components/Skeleton.jsx'
 import EmptyState from '../components/EmptyState.jsx'
@@ -11,6 +11,7 @@ export default function Resumes() {
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const toast = useToast()
+  const navigate = useNavigate()
 
   function load() {
     api.resumes()
@@ -30,7 +31,9 @@ export default function Resumes() {
       toast.push(`Uploaded ${created.original_name} — ATS ${created.ats_score}/100`)
       setFile(null)
       event.target.reset()
-      load()
+      // Land on the breakdown, not the list: the score alone never
+      // says what is lacking — the detail page does.
+      navigate(`/resumes/${created.id}`)
     } catch (err) {
       setError(err.message)
     } finally {
