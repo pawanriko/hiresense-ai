@@ -78,7 +78,19 @@ function Header({ user, onSignedOut, theme, onToggleTheme }) {
             <NavLink to="/resumes">Resumes</NavLink>
             <NavLink to="/jd-match">JD Match</NavLink>
             <NavLink to="/interview">Interview</NavLink>
-            <NavLink to="/applications">Applications</NavLink>
+            {/* Tasks lives under /applications, so plain prefix matching
+                would light up Applications on the Tasks page too.
+                Only count it active off the Tasks route. */}
+            <NavLink
+              to="/applications"
+              className={({ isActive }) =>
+                isActive && !location.pathname.startsWith('/applications/tasks')
+                  ? 'active'
+                  : undefined
+              }
+            >
+              Applications
+            </NavLink>
             <NavLink to="/applications/tasks">Tasks</NavLink>
             <span className="muted">{user.username}</span>
             <button onClick={signOut}>Sign out</button>
