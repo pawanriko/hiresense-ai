@@ -3,8 +3,10 @@
 I'm the one sitting in interviews, so I built the tool I wanted on the candidate's side: upload your resume → get an ATS score with a check-by-check breakdown → match the resume against a job description, point by point, with actual quotes from your resume as proof → practise mock interviews → turn every gap into a task and keep track of your applications.
 
 [![Live demo](https://img.shields.io/badge/Live%20demo-hiresense--ai--s8ih.onrender.com-black)](https://hiresense-ai-s8ih.onrender.com)
-![Tests](https://img.shields.io/badge/tests-178%20passing-black)
+![Tests](https://img.shields.io/badge/tests-197%20passing-black)
 ![License](https://img.shields.io/badge/license-MIT-black)
+![Top language](https://img.shields.io/github/languages/top/pawanriko/hiresense-ai)
+![Stars](https://img.shields.io/github/stars/pawanriko/hiresense-ai?style=social)
 
 ## Try it live
 
@@ -20,17 +22,40 @@ Two honest warnings: it's on Render's free tier, which sleeps when nobody visits
 - **Applications + gap tasks** — track applications (Applied → Interview → Offer / Rejected), and turn gaps from JD Match and weak areas from interviews into a todo/doing/done checklist with one click (it skips duplicates).
 - **One rule I didn't compromise on: the scores are never computed by AI.** AI can draft criteria, generate questions and write feedback — it never touches a number. Every score comes from fixed rules, so the same resume always gets the same score.
 
+## How it flows
+
+```mermaid
+flowchart LR
+    You([Candidate]) --> Upload[Upload resume]
+    Upload --> ATS[ATS scoring<br/>5 fixed rule categories]
+    ATS --> Match[JD Match<br/>criteria + evidence quotes]
+    Match --> Mock[Mock interview<br/>5 questions, fixed rubric]
+    Mock --> Gaps[Gap tasks + application tracker]
+    Gaps --> You
+```
+
+```mermaid
+flowchart LR
+    Browser[React SPA] -->|JSON + InsForge JWT| API[Django API]
+    Browser -->|HTML pages| Django[Django sessions]
+    API --> DB[(Neon Postgres)]
+    Django --> DB
+    API --> AI[Groq / Gemini<br/>optional, criteria + questions only]
+```
+
 ## The interface
 
 The frontend is a React single-page app (Vite) talking to a Django JSON API with InsForge auth (email + password, or Google via InsForge). The original server-rendered Django pages are still there too, at their normal URLs, on Django session login. The design is monochrome — black and white, bold type, thin borders — with a dark/light toggle that remembers your choice.
 
 ## Tech stack
 
+[![My Skills](https://skillicons.dev/icons?i=python,django,react,js,vite,postgres,sqlite,git,github)](https://skillicons.dev)
+
 | Layer | What |
 | --- | --- |
 | Backend | Django 5.2 (LTS), Python 3.12 |
 | Frontend | React 19 + Vite, react-router-dom |
-| Database | SQLite by default; Postgres (Supabase) via `DATABASE_URL` |
+| Database | SQLite by default; Postgres (Neon) via `DATABASE_URL` |
 | Auth | InsForge JWT (RS256, verified via JWKS) for the API; Django sessions for the HTML pages + `/admin/` |
 | AI (optional) | Groq / Gemini via plain `urllib` — no SDK dependencies |
 | Production | gunicorn + WhiteNoise, Render Blueprint (`render.yaml`) |
@@ -107,11 +132,11 @@ To run it yourself:
 
 Known limits: InsForge access tokens are stateless — signing out drops the token locally, but the token stays valid until its 15-minute expiry. Email verification is off unless you configure SMTP in InsForge; with it off, the link command never auto-links on email alone (an email match proves nothing), so existing accounts can only be linked through the explicit mapping above.
 
-### Supabase Postgres
+### Neon Postgres
 
-Set `DATABASE_URL` in `.env` and the app switches from SQLite to Postgres — same models, same migrations, SSL on by default (`sslmode=require`). Use the **Transaction pooler** connection string (port 6543) from your Supabase project's **Settings → Database** page.
+Set `DATABASE_URL` in `.env` and the app switches from SQLite to Postgres — same models, same migrations, SSL on by default (`sslmode=require`). Use the **pooled** connection string from your Neon project's dashboard (the `-pooler` host). The live site runs on Neon (moved off Render's expiring free database in Nov 2026).
 
-⚠️ Use a **fresh** Supabase project for this app, not one that already has another app's data in it. SQLite data doesn't carry over (run `migrate` + `seed_demo` again), and uploads stay on local disk either way. Delete the `DATABASE_URL` line and restart to switch back.
+⚠️ Use a **fresh** Neon project for this app, not one that already has another app's data in it. SQLite data doesn't carry over (run `migrate` + `seed_demo` again), and uploads stay on local disk either way. Delete the `DATABASE_URL` line and restart to switch back.
 
 ### AI providers (Groq / Gemini)
 
@@ -121,7 +146,7 @@ With a key set: JD Match drafts its criteria with AI, interview questions are ge
 
 ## Deploying to Render
 
-The repo has a Blueprint (`render.yaml`): one web service (Django + the built React app, served by WhiteNoise) and one free Postgres database.
+The repo has a Blueprint (`render.yaml`): one web service (Django + the built React app, served by WhiteNoise). The database is Neon Postgres, connected through `DATABASE_URL` set in the dashboard — it is not created by the Blueprint.
 
 1. render.com → connect GitHub → **New → Blueprint** → pick this repo. Render creates both resources from `render.yaml`.
 2. The build installs the Python and Node dependencies, builds the React app, collects static files, migrates, runs `seed_demo`, and runs `link_insforge_users --apply` — that's how the demo login (and its InsForge link) exists on the live database, because Render's Shell is paid-only and the build has to do the seeding.
