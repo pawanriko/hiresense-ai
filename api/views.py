@@ -1,22 +1,15 @@
 """JSON API views for the React frontend.
 
-AUTH MODEL — InsForge JWT auth (see api/insforge_auth.py):
-  * The browser signs in against InsForge directly (email + password,
-    or Google via InsForge) and sends the access token on every API
-    call as Authorization: Bearer. The InsforgeAuthMiddleware
-    verifies the token and sets request.user before any view runs,
-    so the views below never know auth happened — they just check
+AUTH MODEL — Django session auth (see api/auth_views.py):
+  * The browser signs in through /api/auth/login/ (or Google/GitHub
+    via django-allauth under /accounts/) and Django sets a session
+    cookie. AuthenticationMiddleware resolves it to request.user
+    before any view runs, so the views below just check
     request.user.is_authenticated and answer 401 JSON when it is
     not. (@login_required would redirect to the HTML login page,
     which React cannot use.)
-  * There are no session auth endpoints any more: the old
-    csrf/login/register/logout views were removed in the InsForge
-    swap (Phase 5). The only auth-adjacent endpoint left is
-    auth/me/, which reports who the token belongs to.
-  * CSRF: Bearer-verified requests are exempt (the middleware sets
-    request._dont_enforce_csrf_checks) — CSRF protects cookie auth,
-    and these requests carry no cookie credential. The HTML pages
-    still use Django sessions + CSRF tokens as before.
+  * CSRF: mutating requests send the csrftoken cookie value back as
+    the X-CSRFToken header (see frontend/src/api.js).
   * The React dev server (Vite, :5173) proxies /api/* to Django
     (:8000), so from the browser's point of view every API call is
     same-origin and no CORS setup is needed.
@@ -63,17 +56,6 @@ from resumes.scoring import (
 
 def _unauthenticated():
     return JsonResponse({"detail": "Not authenticated"}, status=401)
-
-
-def me(request):
-    """Who is signed in, if anyone. The frontend calls this on load
-    to decide between the login page and the app."""
-    if request.user.is_authenticated:
-        return JsonResponse({
-            "authenticated": True,
-            "username": request.user.username,
-        })
-    return JsonResponse({"authenticated": False})
 
 
 def dashboard(request):

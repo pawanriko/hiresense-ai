@@ -2,14 +2,25 @@
 
 from django.urls import path
 
-from . import views
+from . import auth_views, views
 
 urlpatterns = [
-    # auth/me/ is the only auth endpoint left: sign-in/out happen
-    # against InsForge, in the browser (see frontend/src/insforge.js).
-    # The old csrf/login/register/logout endpoints were removed in
-    # the InsForge swap (Phase 5).
-    path("auth/me/", views.me, name="api-me"),
+    # Django session auth for the React app (see api/auth_views.py).
+    path("auth/csrf/", auth_views.csrf_view, name="api-auth-csrf"),
+    path("auth/register/", auth_views.register_view, name="api-auth-register"),
+    path("auth/login/", auth_views.login_view, name="api-auth-login"),
+    path("auth/logout/", auth_views.logout_view, name="api-auth-logout"),
+    path("auth/me/", auth_views.me_view, name="api-me"),
+    path(
+        "auth/password-reset/",
+        auth_views.password_reset_request_view,
+        name="api-auth-password-reset",
+    ),
+    path(
+        "auth/password-reset/confirm/",
+        auth_views.password_reset_confirm_view,
+        name="api-auth-password-reset-confirm",
+    ),
     path("dashboard/", views.dashboard, name="api-dashboard"),
     path("resumes/", views.resume_list, name="api-resume-list"),
     path("resumes/upload/", views.resume_upload, name="api-resume-upload"),

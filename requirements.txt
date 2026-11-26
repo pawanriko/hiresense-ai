@@ -4,14 +4,12 @@
 Django==5.2.19
 pypdf==6.21.2
 python-docx==1.2.0
-# HTTP client: fetches the InsForge JWKS document (see
-# api/insforge_auth.py) — the only place the server calls InsForge.
+# HTTP client used by django-allauth's OAuth providers.
 requests==2.34.2
 python-dotenv==1.2.4
-# InsForge JWT auth (Phase 1): PyJWT verifies RS256 access tokens against
-# the project's JWKS endpoint (see api/insforge_auth.py). The [crypto]
-# extra brings in `cryptography`, which does the RSA verification.
-# `requests` (pinned above) fetches the JWKS document.
+# Google/GitHub sign-in (django-allauth). PyJWT + cryptography verify
+# Google ID tokens; requests (above) talks to the OAuth providers.
+django-allauth==65.20.1
 PyJWT[crypto]==2.15.1
 cryptography==50.0.2
 # Postgres driver (psycopg 3) + prebuilt binary, added for the Supabase

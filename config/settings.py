@@ -89,14 +89,20 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.github',
     'accounts',
     'resumes',
     'dashboard',
     'jdmatch',
     'interview',
     'applications',
-    # API: JSON endpoints for the React frontend (frontend/). No new
-    # dependencies — plain JsonResponse views + InsForge JWT auth.
+    # API: JSON endpoints for the React frontend (frontend/).
+    # Plain JsonResponse views + Django session auth (see api/auth_views.py).
     'api',
 ]
 
@@ -111,11 +117,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # INSFORGE JWT AUTH (Phases 1 + 4): runs AFTER
-    # AuthenticationMiddleware on purpose — see api/insforge_auth.py
-    # for the dual-window vs cutover behaviour. Inert unless
-    # INSFORGE_AUTH_ENABLED.
-    'api.insforge_auth.InsforgeAuthMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -309,40 +311,60 @@ GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
 GEMINI_CONFIGURED = bool(GEMINI_API_KEY)
 AI_PROVIDER = os.environ.get('AI_PROVIDER', '')
 
-# --- InsForge JWT auth (Phases 1 + 4: two flags, three states) ---
-# Same two-state pattern as the AI providers, plus a cutover flag:
-#   * INSFORGE_AUTH_ENABLED unset/false (the default): the InsForge
-#     middleware does nothing and the API behaves exactly as before
-#     (Django session auth only). Bearer headers are ignored.
-#   * ENABLED "true", REQUIRED unset/false (the dual window): /api/
-#     requests may ALSO authenticate with an InsForge access token
-#     (Authorization: Bearer). Sessions keep working alongside.
-#   * ENABLED "true" AND INSFORGE_AUTH_REQUIRED "true" (cutover):
-#     /api/ requests authenticate by Bearer token ONLY — a session
-#     cookie no longer counts — and the session auth endpoints
-#     answer 410 Gone. REQUIRED without ENABLED does nothing.
-#     The HTML pages and /admin/ keep Django sessions in every
-#     state (a deliberate, documented exception).
-# INSFORGE_BASE_URL is the project's API base (the oss_host, e.g.
-# https://<appkey>.us-east.insforge.app). Django derives the JWKS URL
-# from it; no secret is needed to VERIFY tokens (RS256 public keys).
-# NEVER put the anon key, API key, or JWT secret in Django settings —
-# verification needs none of them.
-INSFORGE_AUTH_ENABLED = (
-    os.environ.get('INSFORGE_AUTH_ENABLED', 'false').lower() == 'true'
+# --- Django-native auth (InsForge migration, Nov 2026) ---
+# The React app uses Django sessions + CSRF again (api/auth_views.py).
+# Google/GitHub sign-in runs through django-allauth with OAuth apps
+# owned by Pawan. Credentials come from environment variables only;
+# when a pair is absent, that provider button stays hidden.
+SITE_ID = 1
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+ACCOUNT_LOGIN_METHODS = {'email', 'username'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_AUTO_SIGNUP = True
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
+GITHUB_OAUTH_CLIENT_ID = os.environ.get('GITHUB_OAUTH_CLIENT_ID', '')
+GITHUB_OAUTH_CLIENT_SECRET = os.environ.get('GITHUB_OAUTH_CLIENT_SECRET', '')
+GOOGLE_OAUTH_CONFIGURED = bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET)
+GITHUB_OAUTH_CONFIGURED = bool(GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET)
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': GOOGLE_OAUTH_CLIENT_ID,
+            'secret': GOOGLE_OAUTH_CLIENT_SECRET,
+            'key': '',
+        },
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
+    },
+    'github': {
+        'APP': {
+            'client_id': GITHUB_OAUTH_CLIENT_ID,
+            'secret': GITHUB_OAUTH_CLIENT_SECRET,
+            'key': '',
+        },
+        'SCOPE': ['user:email'],
+    },
+}
+
+# Password-reset email. Local/dev uses the console backend so reset
+# links print to the server log; production must set EMAIL_HOST and
+# friends (see .env.example) or reset mail cannot be delivered.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend',
 )
-INSFORGE_AUTH_REQUIRED = (
-    os.environ.get('INSFORGE_AUTH_REQUIRED', 'false').lower() == 'true'
-)
-INSFORGE_BASE_URL = os.environ.get('INSFORGE_BASE_URL', '').rstrip('/')
-# Seconds a fetched JWKS document stays cached in memory. An unknown
-# key id always triggers one immediate refetch (rotation), so this
-# only bounds steady-state traffic, not freshness after rotation.
-INSFORGE_JWKS_CACHE_TTL = int(os.environ.get('INSFORGE_JWKS_CACHE_TTL', '3600'))
-# Clock-skew tolerance (seconds) for token time checks. InsForge's
-# servers run ~1-2s ahead of this VM, so a freshly minted token can
-# look "issued in the future" to PyJWT's iat check and be rejected
-# for its first seconds of life — exactly the window a login/refresh
-# lands in. 60s is the usual tolerance; it only ever extends the
-# accepted window, never the token's real 15-minute lifetime.
-INSFORGE_JWT_LEEWAY = int(os.environ.get('INSFORGE_JWT_LEEWAY', '60'))
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'HireSense AI <no-reply@localhost>')

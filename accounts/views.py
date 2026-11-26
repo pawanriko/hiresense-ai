@@ -11,11 +11,8 @@ plain). Success -> LOGIN_REDIRECT_URL (the dashboard). Failure -> the form
 re-renders with an error, no redirect.
 
 This login page serves ONLY the HTML pages and /admin/ (the dev
-interface). The React app signs in through InsForge instead — email +
-password or Google, handled in the browser by the InsForge SDK (see
-frontend/src/insforge.js). Google sign-in used to live here via
-django-allauth; the InsForge swap (Phase 5) removed allauth entirely,
-and Google moved with the rest of auth into InsForge.
+interface). The React app signs in through /api/auth/ (Django sessions) or
+Google/GitHub via django-allauth under /accounts/.
 """
 
 from django.contrib.auth.views import LoginView, LogoutView

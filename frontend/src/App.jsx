@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
-import { initInsforgeSession } from './insforge'
 import SkeletonList from './components/Skeleton.jsx'
 import { ToastProvider } from './components/Toasts.jsx'
 import Login from './pages/Login.jsx'
 import Signup from './pages/Signup.jsx'
+import { ForgotPassword, ResetPassword } from './pages/PasswordReset.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Resumes from './pages/Resumes.jsx'
 import ResumeDetail from './pages/ResumeDetail.jsx'
@@ -138,18 +138,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    // The SDK handshake runs first: it finishes an OAuth callback
-    // exchange (if this load is one) and restores the session from
-    // the refresh cookie — only then can me() see the Bearer token.
-    // A failed handshake (signed out, or an unconfigured build)
-    // just means me() answers anonymous and the login page shows.
     async function boot() {
-      try {
-        await initInsforgeSession()
-      } catch {
-        // Unconfigured build: the login page surfaces the error
-        // when the user tries to sign in.
-      }
       try {
         const data = await api.me()
         setUser(data.authenticated ? { username: data.username } : null)
@@ -184,6 +173,8 @@ export default function App() {
             path="/signup"
             element={user ? <Navigate to="/" /> : <Signup onSignedIn={setUser} />}
           />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route
             path="/"
             element={user ? <Dashboard /> : <Navigate to="/login" />}

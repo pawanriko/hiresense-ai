@@ -4,9 +4,7 @@
 ``seed_demo`` works without touching a shell. ``authenticate`` checks the
 password the same way the login view does (hashed comparison).
 
-Google sign-in used to be tested here too (django-allauth); the InsForge
-swap (Phase 5) removed allauth, and Google moved into InsForge — its
-tests live with the InsForge auth tests in api/tests.py.
+Session-auth and OAuth-route tests live in api/tests.py.
 """
 
 from django.contrib.auth import authenticate, get_user_model

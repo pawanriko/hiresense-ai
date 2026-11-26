@@ -6,8 +6,7 @@ app's own urls.py, so each app owns its little corner of the site:
 
     /                    -> React SPA (production) — see SPA_ROUTES below
     /accounts/login/     -> accounts app (Django's built-in login view,
-        for the HTML pages + /admin/ only; the React app signs in
-        through InsForge)
+        for the HTML pages + /admin/; the React app uses /api/auth/)
     /accounts/logout/    -> accounts app (logout)
     /resumes/upload/     -> resumes app (upload a resume)
     /resumes/<id>/       -> resumes app (one scored resume)
@@ -39,6 +38,8 @@ SPA_ROUTES = [
     '',
     'login',
     'signup',
+    'forgot-password',
+    'reset-password',
     'resumes',
     'resumes/<int:pk>',
     'jd-match',
@@ -54,8 +55,10 @@ SPA_ROUTES = [
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
-    # Accounts URLs: the HTML login/logout pages (see accounts/urls.py).
+    # Accounts URLs: the HTML login/logout pages (see accounts/urls.py)
+    # first, then django-allauth's Google/GitHub OAuth endpoints.
     path('accounts/', include('accounts.urls')),
+    path('accounts/', include('allauth.urls')),
     # Root-level files from the built frontend (favicon, icons).
     path('favicon.svg', config_views.site_file, {'name': 'favicon.svg'}),
     path('icons.svg', config_views.site_file, {'name': 'icons.svg'}),

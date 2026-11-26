@@ -2,8 +2,8 @@
 
 Just the HTML login/logout pages (Django's built-in views, pointed at
 our templates). The React app does not use these — it signs in through
-InsForge (see frontend/src/insforge.js). Google sign-in used to live
-here via django-allauth; the InsForge swap (Phase 5) removed it.
+the JSON API (see api/auth_views.py). Google/GitHub OAuth lives
+here too, via django-allauth (mounted after these URLs).
 """
 
 from django.urls import path

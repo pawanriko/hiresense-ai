@@ -1,28 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import {
-  insforgeSignIn,
-  insforgeSignInWithGoogle,
-} from '../insforge'
 
 export default function Login({ onSignedIn }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [providers, setProviders] = useState([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    api.csrf()
+      .then((data) => setProviders(data.providers || []))
+      .catch(() => setProviders([]))
+  }, [])
 
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
     setBusy(true)
     try {
-      // InsForge signs in with email. The SDK call only proves the
-      // credential — me() is what creates/links the Django user
-      // and returns the username the header shows.
-      await insforgeSignIn(email, password)
-      const me = await api.me()
+      const me = await api.login(email, password)
       if (!me.authenticated) throw new Error('Sign-in did not stick — try again')
       onSignedIn({ username: me.username })
       navigate('/')
@@ -33,13 +32,11 @@ export default function Login({ onSignedIn }) {
     }
   }
 
-  async function handleGoogle() {
+  async function handleOAuth(provider) {
     setError('')
     setBusy(true)
     try {
-      // Redirects away to Google; the SDK finishes the flow when
-      // Google sends the browser back to /login (see insforge.js).
-      await insforgeSignInWithGoogle()
+      await api.startOAuth(provider)
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -76,10 +73,23 @@ export default function Login({ onSignedIn }) {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
-      <p>
-        <button type="button" onClick={handleGoogle} disabled={busy}>
-          Sign in with Google
-        </button>
+      {providers.includes('google') && (
+        <p>
+          <button type="button" onClick={() => handleOAuth('google')} disabled={busy}>
+            Sign in with Google
+          </button>
+        </p>
+      )}
+      {providers.includes('github') && (
+        <p>
+          <button type="button" onClick={() => handleOAuth('github')} disabled={busy}>
+            Sign in with GitHub
+          </button>
+        </p>
+      )}
+      <p className="muted">
+        Forgot your password, or signed in with InsForge before?{' '}
+        <Link to="/forgot-password">Set a new password</Link>
       </p>
       <p className="muted">
         New here? <Link to="/signup">Create an account</Link>

@@ -1,38 +1,34 @@
 // Tiny API client — the only place that knows how Django auth works.
 //
-// Every request carries the InsForge access token as Authorization:
-// Bearer (see insforge.js — the token lives in memory, refreshed
-// from an httpOnly cookie). Django verifies the token and exempts
-// verified Bearer calls from CSRF (a token is not a cookie — see
-// api/insforge_auth.py), so no CSRF header is sent. On a 401 the
-// client refreshes the token once and retries once — access tokens
-// live 15 minutes, so expiry mid-session is normal, not an error.
-import {
-  getAccessToken,
-  insforgeSignOut,
-  refreshInsforgeSession,
-} from './insforge'
+// Auth is a Django session cookie (HttpOnly) plus a readable
+// csrftoken cookie. Mutating requests send the token back as the
+// X-CSRFToken header. Google/GitHub sign-in posts to django-allauth
+// under /accounts/ and returns with the same session cookie set.
 
-function bearerHeaders(headers) {
-  const token = getAccessToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  return headers
+function getCsrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : null
 }
 
-async function request(path, { method = 'GET', body, _retried = false } = {}) {
-  const headers = bearerHeaders({ 'Content-Type': 'application/json' })
+async function ensureCsrf() {
+  if (!getCsrfToken()) {
+    await fetch('/api/auth/csrf/', { credentials: 'include' })
+  }
+  return getCsrfToken()
+}
+
+async function request(path, { method = 'GET', body } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (method !== 'GET' && method !== 'HEAD') {
+    const token = await ensureCsrf()
+    if (token) headers['X-CSRFToken'] = token
+  }
   const response = await fetch(path, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
     credentials: 'include',
   })
-  if (response.status === 401 && !_retried) {
-    const refreshed = await refreshInsforgeSession()
-    if (refreshed) {
-      return request(path, { method, body, _retried: true })
-    }
-  }
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(data.detail || 'Request failed')
@@ -42,8 +38,10 @@ async function request(path, { method = 'GET', body, _retried = false } = {}) {
 
 async function requestFormData(path, formData) {
   // Multipart upload: the browser sets Content-Type (with boundary)
-  // itself, so we must NOT set it — only the Bearer header goes on.
-  const headers = bearerHeaders({})
+  // itself, so we must NOT set it — only the CSRF header goes on.
+  const headers = {}
+  const token = await ensureCsrf()
+  if (token) headers['X-CSRFToken'] = token
   const response = await fetch(path, {
     method: 'POST',
     headers,
@@ -57,11 +55,41 @@ async function requestFormData(path, formData) {
   return data
 }
 
+async function startOAuth(provider) {
+  const token = await ensureCsrf()
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = `/accounts/${provider}/login/`
+  const csrf = document.createElement('input')
+  csrf.type = 'hidden'
+  csrf.name = 'csrfmiddlewaretoken'
+  csrf.value = token || ''
+  form.appendChild(csrf)
+  const next = document.createElement('input')
+  next.type = 'hidden'
+  next.name = 'next'
+  next.value = '/'
+  form.appendChild(next)
+  document.body.appendChild(form)
+  form.submit()
+}
+
 export const api = {
+  csrf: () => request('/api/auth/csrf/'),
   me: () => request('/api/auth/me/'),
-  // Sign-in/up happen against InsForge directly (see insforge.js);
-  // the pages call the SDK, then me(), and never touch Django auth.
-  logout: () => insforgeSignOut(),
+  login: (email, password) =>
+    request('/api/auth/login/', { method: 'POST', body: { email, password } }),
+  register: (name, email, password) =>
+    request('/api/auth/register/', { method: 'POST', body: { name, email, password } }),
+  logout: () => request('/api/auth/logout/', { method: 'POST' }),
+  passwordReset: (email) =>
+    request('/api/auth/password-reset/', { method: 'POST', body: { email } }),
+  passwordResetConfirm: (uid, token, password) =>
+    request('/api/auth/password-reset/confirm/', {
+      method: 'POST',
+      body: { uid, token, password },
+    }),
+  startOAuth,
   dashboard: () => request('/api/dashboard/'),
   resumes: () => request('/api/resumes/'),
   resumeDetail: (id) => request(`/api/resumes/${id}/`),

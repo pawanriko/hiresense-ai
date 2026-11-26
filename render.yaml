@@ -14,13 +14,17 @@
 #     re-run — it refreshes the demo user instead of duplicating it.
 #   * Optional env vars (add in the dashboard later): GROQ_API_KEY,
 #     GEMINI_API_KEY (AI features; the app works without them),
-#     GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET.
+#     GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET,
+#     GITHUB_OAUTH_CLIENT_ID / GITHUB_OAUTH_CLIENT_SECRET,
+#     EMAIL_HOST / EMAIL_PORT / EMAIL_HOST_USER /
+#     EMAIL_HOST_PASSWORD / EMAIL_USE_TLS / DEFAULT_FROM_EMAIL
+#     (password-reset mail; without these, reset links cannot send).
 services:
   - type: web
     name: hiresense-ai
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt && npm --prefix frontend ci && npm --prefix frontend run build && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_demo && python manage.py link_insforge_users --apply"
+    buildCommand: "pip install -r requirements.txt && npm --prefix frontend ci && npm --prefix frontend run build && python manage.py collectstatic --noinput && python manage.py migrate && python manage.py seed_demo"
     startCommand: "gunicorn config.wsgi:application"
     envVars:
       - key: DEBUG

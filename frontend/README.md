@@ -4,15 +4,14 @@ The single-page app for HireSense AI: Login, Dashboard, Resumes
 (upload + ATS detail), JD Match (draft/edit criteria, run, analysis),
 Mock Interview (start, answer, report), Applications and Gap Tasks.
 
-It talks to the Django JSON API in `../api/` using **InsForge JWT
-auth**: the browser signs in against InsForge (email + password, or
-Google via InsForge) and sends the access token as an
-`Authorization: Bearer` header on every call — see `src/insforge.js`
-and `../api/insforge_auth.py`. No CORS: in development, Vite proxies
-`/api` to Django on :8000; in production, Django serves the built app
-itself (same origin). Two build-time env vars are required —
-`VITE_INSFORGE_URL` and `VITE_INSFORGE_ANON_KEY`, in a `frontend/.env`
-file (gitignored) or the deploy environment.
+It talks to the Django JSON API in `../api/` using **Django session
+auth**: email + password through `/api/auth/` (session cookie +
+`X-CSRFToken` header), or Google/GitHub through django-allauth under
+`/accounts/` — see `src/api.js` and `../api/auth_views.py`. No CORS:
+in development, Vite proxies `/api` to Django on :8000; in
+production, Django serves the built app itself (same origin). No
+frontend env vars are needed for auth; OAuth credentials live on the
+backend (`GOOGLE_OAUTH_*` / `GITHUB_OAUTH_*`).
 
 ## Develop
 

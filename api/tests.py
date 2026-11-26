@@ -9,22 +9,20 @@ default; the Bearer CSRF exemption is proven explicitly by a
 dedicated test in InsforgeAuthTests.
 """
 
+import json
 import os
-import time
 from io import StringIO
 from unittest import mock
 
-import jwt
-from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.files.base import ContentFile
 from django.core.management import CommandError, call_command
 from django.test import Client, TestCase, override_settings
+from django.urls import reverse
 
 from applications.models import Application, GapTask
-from api.insforge_auth import resolve_user
 from api.models import InsforgeIdentity
-from django.db.models.query import QuerySet
 from jdmatch.models import JobDescription
 from resumes.models import Resume
 
@@ -42,13 +40,10 @@ def make_resume(owner, name="resume.pdf", score=56):
 
 
 class MeApiTests(TestCase):
-    # me/ is the only auth-adjacent endpoint left; the session
-    # csrf/login/register/logout endpoints were removed in the
-    # InsForge swap (Phase 5). Bearer-authenticated me/ is covered
-    # by InsforgeAuthTests.
     def test_me_anonymous(self):
         response = self.client.get("/api/auth/me/")
-        self.assertEqual(response.json(), {"authenticated": False})
+        self.assertEqual(response.json()["authenticated"], False)
+        self.assertIn("providers", response.json())
 
 
 class DashboardApiTests(TestCase):
@@ -679,189 +674,101 @@ class ApplicationsApiTests(TestCase):
             self.client.get("/api/applications/tasks/").status_code, 401)
 
 
-# --- InsForge JWT auth (Phase 1) ---
-# These tests mint REAL RS256 tokens with a throwaway keypair generated
-# here (never the project's keys) and stub only the JWKS fetch — the
-# signature check, expiry check, kid lookup, and user resolution all
-# run for real. The JWKS document shape matches what the Phase 0 spike
-# read off the live project: one RSA key with a `kid`.
+# --- Django session auth (InsForge migration) ---
 
-_TEST_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_TEST_OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_TEST_JWK = jwt.algorithms.RSAAlgorithm.to_jwk(
-    _TEST_PRIVATE_KEY.public_key(), as_dict=True
-)
-_TEST_JWK.update({"kid": "test-kid-1", "alg": "RS256", "use": "sig"})
-_TEST_JWKS = [_TEST_JWK]
+class SessionAuthTests(TestCase):
+    def post_json(self, path, payload, client=None):
+        client = client or self.client
+        return client.post(
+            path, data=json.dumps(payload), content_type="application/json"
+        )
 
-_INSFORGE_ON = override_settings(
-    INSFORGE_AUTH_ENABLED=True,
-    INSFORGE_BASE_URL="https://test.insforge.app",
-)
+    def test_csrf_endpoint_sets_cookie_and_lists_providers(self):
+        client = Client(enforce_csrf_checks=True)
+        response = client.get("/api/auth/csrf/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("csrftoken", response.cookies)
+        self.assertIn("providers", response.json())
 
+    def test_register_creates_user_and_session(self):
+        response = self.post_json(
+            "/api/auth/register/",
+            {"name": "Riko Test", "email": "riko@example.com", "password": "Str0ng-pass-42"},
+        )
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(email="riko@example.com")
+        self.assertTrue(user.check_password("Str0ng-pass-42"))
+        self.assertEqual(self.client.get("/api/auth/me/").json()["username"], user.username)
 
-def _mint_token(sub="insforge-user-1", email="riko@example.com",
-                key=_TEST_PRIVATE_KEY, kid="test-kid-1", exp_offset=900,
-                iat_offset=0):
-    now = int(time.time())
-    return jwt.encode(
-        {"sub": sub, "email": email, "role": "authenticated",
-         "iat": now + iat_offset, "exp": now + iat_offset + exp_offset},
-        key, algorithm="RS256", headers={"kid": kid},
-    )
-
-
-@_INSFORGE_ON
-class InsforgeAuthTests(TestCase):
-    def setUp(self):
-        # Stub the JWKS fetch (network) for every test; the crypto and
-        # the user resolution still run for real. Started here instead
-        # of a class decorator so no mock argument leaks into tests.
-        patcher = mock.patch(
-            "api.insforge_auth._fetch_jwks", return_value=_TEST_JWKS)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def _bearer(self, token):
-        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
-
-    def test_bearer_token_creates_user_and_authenticates(self):
-        response = self.client.get(
-            "/api/auth/me/", **self._bearer(_mint_token()))
-        self.assertEqual(response.json(), {
-            "authenticated": True, "username": "riko"})
-        user = User.objects.get(username="riko")
-        self.assertEqual(user.email, "riko@example.com")
-        # InsForge owns the credential: no usable Django password.
-        self.assertFalse(user.has_usable_password())
-        self.assertTrue(InsforgeIdentity.objects.filter(
-            user=user, sub="insforge-user-1").exists())
-
-    def test_second_request_reuses_same_user(self):
-        token = _mint_token()
-        self.client.get("/api/auth/me/", **self._bearer(token))
-        self.client.get("/api/auth/me/", **self._bearer(token))
-        self.assertEqual(User.objects.count(), 1)
-        self.assertEqual(InsforgeIdentity.objects.count(), 1)
-
-    def test_expired_token_is_anonymous(self):
-        # Expired well beyond the 60s clock-skew leeway: still rejected.
-        token = _mint_token(exp_offset=-120)
-        me = self.client.get("/api/auth/me/", **self._bearer(token))
-        self.assertEqual(me.json(), {"authenticated": False})
-        dashboard = self.client.get(
-            "/api/dashboard/", **self._bearer(token))
-        self.assertEqual(dashboard.status_code, 401)
-
-    def test_wrong_signature_is_anonymous(self):
-        token = _mint_token(key=_TEST_OTHER_KEY)
-        response = self.client.get(
-            "/api/dashboard/", **self._bearer(token))
-        self.assertEqual(response.status_code, 401)
-
-    def test_unknown_kid_is_anonymous(self):
-        token = _mint_token(kid="no-such-kid")
-        response = self.client.get(
-            "/api/dashboard/", **self._bearer(token))
-        self.assertEqual(response.status_code, 401)
-
-    def test_token_from_clock_ahead_server_is_accepted(self):
-        # InsForge's servers run ~1-2s ahead of this VM: a token
-        # minted "30 seconds in the future" must still verify (the
-        # leeway), or every fresh login/refresh would flap.
-        token = _mint_token(iat_offset=30)
-        response = self.client.get(
-            "/api/auth/me/", **self._bearer(token))
-        self.assertEqual(response.json(), {
-            "authenticated": True, "username": "riko"})
-
-    def test_garbage_token_is_anonymous(self):
-        response = self.client.get(
-            "/api/dashboard/", **self._bearer("not-a-jwt"))
-        self.assertEqual(response.status_code, 401)
-
-    def test_email_collision_returns_409_without_creating(self):
+    def test_register_rejects_existing_email(self):
         User.objects.create_user(
-            username="old", email="riko@example.com", password="pw123456")
-        response = self.client.get(
-            "/api/auth/me/", **self._bearer(_mint_token()))
+            username="old", email="riko@example.com", password="Str0ng-pass-42"
+        )
+        response = self.post_json(
+            "/api/auth/register/",
+            {"email": "RIKO@example.com", "password": "Another-pass-42"},
+        )
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(User.objects.count(), 1)
-        self.assertEqual(InsforgeIdentity.objects.count(), 0)
+        self.assertEqual(User.objects.filter(email__iexact="riko@example.com").count(), 1)
 
-    def test_username_uniquified_when_local_part_taken(self):
+    def test_login_by_email_and_logout(self):
         User.objects.create_user(
-            username="riko", email="other@example.com", password="pw123456")
-        response = self.client.get(
-            "/api/auth/me/", **self._bearer(_mint_token()))
-        self.assertEqual(response.json(), {
-            "authenticated": True, "username": "riko_1"})
+            username="riko", email="riko@example.com", password="Str0ng-pass-42"
+        )
+        bad = self.post_json(
+            "/api/auth/login/", {"email": "riko@example.com", "password": "wrong-pass"}
+        )
+        self.assertEqual(bad.status_code, 401)
+        ok = self.post_json(
+            "/api/auth/login/", {"email": "riko@example.com", "password": "Str0ng-pass-42"}
+        )
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["username"], "riko")
+        self.post_json("/api/auth/logout/", {})
+        self.assertEqual(self.client.get("/api/auth/me/").json()["authenticated"], False)
 
-    def test_race_on_first_request_returns_winners_row(self):
-        # Simulate the race: the identity row already exists, but the
-        # first lookup misses (a concurrent request created it a
-        # millisecond ago). Creation then hits the unique constraint;
-        # resolve_user must return the winner's user, roll back its
-        # own half-created user, and sync the email — not 500.
-        user = User.objects.create_user(
-            username="riko", email="old@example.com", password="pw123456")
+    def test_bearer_token_no_longer_authenticates(self):
+        response = self.client.get(
+            "/api/auth/me/", HTTP_AUTHORIZATION="Bearer not-a-real-token"
+        )
+        self.assertEqual(response.json()["authenticated"], False)
+
+    def test_password_reset_sets_password_for_existing_insforge_user(self):
+        user = User.objects.create_user(username="legacy", email="legacy@example.com")
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
         InsforgeIdentity.objects.create(
-            user=user, sub="insforge-user-1", email="old@example.com")
-        real_get = QuerySet.get
-        state = {"calls": 0}
-
-        def flaky_get(qs_self, *args, **kwargs):
-            state["calls"] += 1
-            if state["calls"] == 1 and qs_self.model is InsforgeIdentity:
-                raise InsforgeIdentity.DoesNotExist
-            return real_get(qs_self, *args, **kwargs)
-
-        with mock.patch.object(QuerySet, "get", flaky_get):
-            resolved = resolve_user(
-                {"sub": "insforge-user-1", "email": "riko@example.com"})
-        self.assertEqual(resolved, user)
-        self.assertEqual(User.objects.count(), 1)
+            user=user, sub="insforge-user-1", email="legacy@example.com"
+        )
+        response = self.post_json(
+            "/api/auth/password-reset/", {"email": "legacy@example.com"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        uid = body.split("uid=")[1].split("&")[0]
+        token = body.split("token=")[1].split()[0]
+        confirm = self.post_json(
+            "/api/auth/password-reset/confirm/",
+            {"uid": uid, "token": token, "password": "New-Str0ng-pass-42"},
+        )
+        self.assertEqual(confirm.status_code, 200)
         user.refresh_from_db()
-        self.assertEqual(user.email, "riko@example.com")
+        self.assertTrue(user.check_password("New-Str0ng-pass-42"))
+        self.assertTrue(
+            InsforgeIdentity.objects.filter(user=user, sub="insforge-user-1").exists()
+        )
 
-    def test_session_still_works_with_flag_on(self):
-        user = make_user("demo")
-        self.client.force_login(user)
-        response = self.client.get("/api/dashboard/")
+    def test_password_reset_request_is_generic_for_unknown_email(self):
+        response = self.post_json(
+            "/api/auth/password-reset/", {"email": "nobody@example.com"}
+        )
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
 
-    def test_bearer_token_reaches_owned_data(self):
-        token = _mint_token()
-        self.client.get("/api/auth/me/", **self._bearer(token))
-        user = User.objects.get(username="riko")
-        make_resume(user)
-        response = self.client.get("/api/resumes/", **self._bearer(token))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()["resumes"]), 1)
-
-    def test_bearer_post_is_csrf_exempt_but_session_post_is_not(self):
-        # Phase 5: a verified Bearer request carries no cookie
-        # credential, so the middleware exempts it from CSRF; a
-        # session POST without a CSRF token must still 403.
-        csrf_client = Client(enforce_csrf_checks=True)
-        body = {"title": "Backend Dev", "raw_text": "x" * 40}
-        bearer = csrf_client.post(
-            "/api/jdmatch/jds/", body,
-            content_type="application/json",
-            **self._bearer(_mint_token()))
-        self.assertEqual(bearer.status_code, 201)
-        csrf_client.force_login(make_user("demo"))
-        session = csrf_client.post(
-            "/api/jdmatch/jds/", body, content_type="application/json")
-        self.assertEqual(session.status_code, 403)
-
-
-class InsforgeFlagOffTests(TestCase):
-    @override_settings(INSFORGE_AUTH_ENABLED=False)
-    def test_bearer_ignored_with_flag_off(self):
-        response = self.client.get(
-            "/api/dashboard/", HTTP_AUTHORIZATION="Bearer whatever")
-        self.assertEqual(response.status_code, 401)
+    def test_oauth_provider_routes_exist(self):
+        self.assertEqual(reverse("google_login"), "/accounts/google/login/")
+        self.assertEqual(reverse("github_login"), "/accounts/github/login/")
 
 
 # --- link_insforge_users (Phase 3) ---
@@ -953,92 +860,3 @@ class LinkInsforgeUsersTests(TestCase):
     def test_apply_rejects_invalid_json(self):
         with self.assertRaises(CommandError):
             self._run("--apply", "--map", "{not json")
-
-
-# --- InsForge cutover enforcement (Phase 4) ---
-
-_INSFORGE_REQUIRED = override_settings(
-    INSFORGE_AUTH_ENABLED=True,
-    INSFORGE_AUTH_REQUIRED=True,
-    INSFORGE_BASE_URL="https://test.insforge.app",
-)
-
-
-@_INSFORGE_REQUIRED
-class InsforgeCutoverTests(TestCase):
-    def setUp(self):
-        patcher = mock.patch(
-            "api.insforge_auth._fetch_jwks", return_value=_TEST_JWKS)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def _bearer(self, token):
-        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
-
-    def test_session_alone_no_longer_authenticates_api(self):
-        self.client.force_login(make_user("demo"))
-        dashboard = self.client.get("/api/dashboard/")
-        self.assertEqual(dashboard.status_code, 401)
-        me = self.client.get("/api/auth/me/")
-        self.assertEqual(me.json(), {"authenticated": False})
-
-    def test_bearer_still_authenticates_after_cutover(self):
-        token = _mint_token()
-        dashboard = self.client.get(
-            "/api/dashboard/", **self._bearer(token))
-        self.assertEqual(dashboard.status_code, 200)
-        me = self.client.get("/api/auth/me/", **self._bearer(token))
-        self.assertEqual(me.json(), {
-            "authenticated": True, "username": "riko"})
-
-    def test_bad_token_never_falls_back_to_session(self):
-        self.client.force_login(make_user("demo"))
-        response = self.client.get(
-            "/api/dashboard/", **self._bearer("not-a-jwt"))
-        self.assertEqual(response.status_code, 401)
-
-    def test_session_auth_endpoints_are_removed(self):
-        # Phase 4 answered 410; Phase 5 removed the endpoints, so a
-        # stale client now gets 404 (no route matches at all).
-        self.assertEqual(
-            self.client.get("/api/auth/csrf/").status_code, 404)
-        self.assertEqual(
-            self.client.post("/api/auth/login/",
-                             data="{}", content_type="application/json"
-                             ).status_code, 404)
-        self.assertEqual(
-            self.client.post("/api/auth/register/",
-                             data="{}", content_type="application/json"
-                             ).status_code, 404)
-        self.assertEqual(
-            self.client.post("/api/auth/logout/").status_code, 404)
-
-    def test_me_endpoint_is_not_gone(self):
-        # me/ is how the frontend checks auth state under Bearer auth.
-        response = self.client.get(
-            "/api/auth/me/", **self._bearer(_mint_token()))
-        self.assertEqual(response.status_code, 200)
-
-    def test_html_pages_keep_session_auth(self):
-        # Documented exception: the dev interface and /admin/ stay
-        # on Django sessions in every flag state.
-        self.client.force_login(make_user("demo"))
-        response = self.client.get("/jd-match/")
-        self.assertEqual(response.status_code, 200)
-        self.client.logout()
-        self.assertEqual(self.client.get("/jd-match/").status_code, 302)
-
-    def test_admin_login_page_still_served(self):
-        response = self.client.get("/admin/login/?next=/admin/")
-        self.assertEqual(response.status_code, 200)
-
-
-class InsforgeRequiredWithoutEnabledTests(TestCase):
-    @override_settings(
-        INSFORGE_AUTH_ENABLED=False, INSFORGE_AUTH_REQUIRED=True)
-    def test_required_is_inert_without_enabled(self):
-        # REQUIRED alone changes nothing: sessions still authenticate
-        # the API exactly as before (the session auth endpoints no
-        # longer exist at all — see test_session_auth_endpoints_...).
-        self.client.force_login(make_user("demo"))
-        self.assertEqual(self.client.get("/api/dashboard/").status_code, 200)

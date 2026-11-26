@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { insforgeSignUp } from '../insforge'
 
-// Create an account. The account lives in InsForge (email +
-// password, verified by InsForge) and the first me() call creates
-// the matching Django user. A successful signup lands on the
-// dashboard.
+// Create a Django account (email + password). A successful signup
+// starts a session and lands on the dashboard.
 export default function Signup({ onSignedIn }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -25,8 +22,7 @@ export default function Signup({ onSignedIn }) {
     }
     setBusy(true)
     try {
-      await insforgeSignUp(email, password, name)
-      const me = await api.me()
+      const me = await api.register(name, email, password)
       if (!me.authenticated) throw new Error('Sign-up did not stick — try signing in')
       onSignedIn({ username: me.username })
       navigate('/')
